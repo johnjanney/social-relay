@@ -116,11 +116,33 @@ class SRL_Cron_Health {
 	}
 
 	/**
-	 * Health state: 'ok', 'stale', or 'never'.
+	 * Whether the site has handed cron over to a real scheduler.
+	 *
+	 * @return bool
+	 */
+	public static function wp_cron_disabled(): bool {
+		return defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+	}
+
+	/**
+	 * Health state: 'ok', 'unverified', 'stale', or 'never'.
+	 *
+	 * `unverified` exists because of the observer effect. On a site that has
+	 * NOT set DISABLE_WP_CRON — exactly the misconfigured population this panel
+	 * is meant to detect — loading any wp-admin page calls wp_cron(), which
+	 * spawns a loopback request that runs due events including the heartbeat.
+	 * The owner sees a warning, refreshes, and sees green, because their own
+	 * page load caused the heartbeat. Their posts still stall for hours between
+	 * visitors, which is the real condition, and a two-state panel would deny
+	 * it. A metric a refresh can turn green teaches the owner to distrust it.
 	 *
 	 * @return string
 	 */
 	public static function status(): string {
+		if ( ! self::wp_cron_disabled() ) {
+			return 'unverified';
+		}
+
 		$since = self::seconds_since_last_run();
 
 		if ( null === $since ) {

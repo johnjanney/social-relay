@@ -37,6 +37,22 @@ class SRL_Log {
 	public const MAX_MESSAGE_BYTES = 2048;
 
 	/**
+	 * Schema version of the table below.
+	 *
+	 * WordPress does NOT fire the activation hook when a plugin is updated in
+	 * place, so "runs dbDelta on upgrade" needs an explicit stored version to
+	 * compare against. Without this the varchar(20) to varchar(32) widening
+	 * would never reach existing installs — the very sites with data worth
+	 * keeping. Incremented whenever the DDL changes.
+	 */
+	public const DB_VERSION = 2;
+
+	/**
+	 * Option holding the installed schema version.
+	 */
+	public const DB_VERSION_OPTION = 'srl_db_version';
+
+	/**
 	 * The daily pruning event.
 	 */
 	public const PRUNE_HOOK = 'srl_prune_log';
@@ -79,14 +95,27 @@ class SRL_Log {
 		$table           = self::table_name();
 		$charset_collate = $wpdb->get_charset_collate();
 
+		// event is varchar(32), not varchar(20): 'credentials_unreadable' is 22
+		// characters. At 20 a strict-mode MySQL rejects the insert and a
+		// non-strict one silently truncates to a value matching no query, so
+		// the single audit record of the salt-rotation state would have been
+		// the one row that could not be stored.
+		//
+		// post_title, scheduled_at and sent_at are denormalised snapshots so a
+		// row is self-contained. Reading them live at render time loses them
+		// for a deleted post and shows a reposted post's new sent time against
+		// every historical row.
 		$sql = "CREATE TABLE {$table} (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   post_id bigint(20) unsigned NOT NULL DEFAULT 0,
+  post_title varchar(255) NOT NULL DEFAULT '',
   provider varchar(32) NOT NULL DEFAULT 'x',
-  event varchar(20) NOT NULL,
+  event varchar(32) NOT NULL,
   http_status smallint(5) unsigned DEFAULT NULL,
   remote_id varchar(64) DEFAULT NULL,
   message text DEFAULT NULL,
+  scheduled_at datetime DEFAULT NULL,
+  sent_at datetime DEFAULT NULL,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY post_id (post_id),
@@ -94,6 +123,26 @@ class SRL_Log {
 ) {$charset_collate};";
 
 		dbDelta( $sql );
+
+		update_option( self::DB_VERSION_OPTION, self::DB_VERSION, true );
+	}
+
+	/**
+	 * Run the schema upgrade when the stored version is behind.
+	 *
+	 * Called on plugins_loaded. Cheap in the common case: one autoloaded
+	 * option read and an integer comparison.
+	 *
+	 * @return void
+	 */
+	public static function maybe_upgrade(): void {
+		$installed = (int) get_option( self::DB_VERSION_OPTION, 0 );
+
+		if ( $installed >= self::DB_VERSION ) {
+			return;
+		}
+
+		self::install_table();
 	}
 
 	/**
@@ -113,23 +162,38 @@ class SRL_Log {
 		?int $http_status = null,
 		?string $remote_id = null,
 		string $message = '',
-		string $provider = 'x'
+		string $provider = 'x',
+		?int $scheduled_at = null,
+		?int $sent_at = null
 	): void {
 		global $wpdb;
+
+		// Snapshot the title now. Reading it at render time returns nothing
+		// once the post is deleted, and the log outlives the post by design.
+		$title = '';
+		if ( $post_id > 0 ) {
+			$post = get_post( $post_id );
+			if ( $post instanceof WP_Post ) {
+				$title = mb_substr( (string) $post->post_title, 0, 255 );
+			}
+		}
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table; there is no core API for it, and a log write must not be cached.
 		$wpdb->insert(
 			self::table_name(),
 			array(
-				'post_id'     => $post_id,
-				'provider'    => $provider,
-				'event'       => $event,
-				'http_status' => $http_status,
-				'remote_id'   => $remote_id,
-				'message'     => self::truncate( $message ),
-				'created_at'  => gmdate( 'Y-m-d H:i:s' ),
+				'post_id'      => $post_id,
+				'post_title'   => $title,
+				'provider'     => $provider,
+				'event'        => $event,
+				'http_status'  => $http_status,
+				'remote_id'    => $remote_id,
+				'message'      => self::truncate( $message ),
+				'scheduled_at' => null === $scheduled_at ? null : gmdate( 'Y-m-d H:i:s', $scheduled_at ),
+				'sent_at'      => null === $sent_at ? null : gmdate( 'Y-m-d H:i:s', $sent_at ),
+				'created_at'   => gmdate( 'Y-m-d H:i:s' ),
 			),
-			array( '%d', '%s', '%s', '%d', '%s', '%s', '%s' )
+			array( '%d', '%s', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s' )
 		);
 	}
 
@@ -221,6 +285,19 @@ class SRL_Log {
 		);
 
 		return is_int( $deleted ) ? $deleted : 0;
+	}
+
+	/**
+	 * Event names that represent a send attempt, for the FR-1.8 filter.
+	 *
+	 * "The last 50 attempts" and "the last 50 rows" are different sets: a busy
+	 * site that schedules and cancels would otherwise fill the window with
+	 * non-attempts and hide the failures the panel exists to surface.
+	 *
+	 * @return array<int, string>
+	 */
+	public static function attempt_events(): array {
+		return array( self::EVENT_SENT, self::EVENT_FAILED, self::EVENT_RETRY );
 	}
 
 	/**
