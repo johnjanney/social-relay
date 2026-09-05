@@ -242,6 +242,65 @@ function oauth_header(
 /* Credentials                                                         */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Reject a value that cannot possibly be a real credential.
+ *
+ * This exists because the first live run of this script was made with all four
+ * values set to the literal string "..." — the placeholder from the pasted
+ * instructions. Every call failed with 401, which looked exactly like a signing
+ * bug or a permissions problem and was neither. A diagnostic that can be
+ * misread that badly is not a diagnostic. Catch it here, before the network.
+ *
+ * @return string|null Reason the value is rejected, or null if it looks usable.
+ */
+function reject_reason( string $value ): ?string {
+	$lower = strtolower( $value );
+
+	if ( preg_match( '/\s/', $value ) ) {
+		return 'it contains a space, tab or newline';
+	}
+	if ( preg_match( '/^[.\-_*x]+$/', $lower ) ) {
+		return 'it is only punctuation or x characters, so it is a placeholder';
+	}
+	foreach ( array( 'paste', 'your_', 'your-', 'yourkey', 'placeholder', 'here', 'changeme', 'todo', 'xxxx' ) as $needle ) {
+		if ( str_contains( $lower, $needle ) ) {
+			return "it contains \"{$needle}\", so it is placeholder text";
+		}
+	}
+	if ( strlen( $value ) < 15 ) {
+		return 'it is only ' . strlen( $value ) . ' characters; real X credentials are far longer';
+	}
+	return null;
+}
+
+/**
+ * Ask for one credential on the terminal, hiding the typed characters if the
+ * platform allows it. Returns an empty string when there is no terminal to ask.
+ */
+function prompt_for( string $env_name ): string {
+	if ( ! function_exists( 'stream_isatty' ) || ! @stream_isatty( STDIN ) ) {
+		return '';
+	}
+
+	$hidden = false;
+	if ( DIRECTORY_SEPARATOR === '/' && @is_readable( '/dev/tty' ) ) {
+		// Suppress echo so the pasted secret does not stay on screen or in a
+		// scrollback buffer that later gets pasted into a chat window.
+		@shell_exec( 'stty -echo 2>/dev/null' );
+		$hidden = ( trim( (string) @shell_exec( 'stty -a 2>/dev/null | grep -o "\-echo" | head -1' ) ) === '-echo' );
+	}
+
+	fwrite( STDOUT, "  {$env_name}: " );
+	$value = fgets( STDIN );
+
+	if ( $hidden ) {
+		@shell_exec( 'stty echo 2>/dev/null' );
+		fwrite( STDOUT, "\n" );
+	}
+
+	return trim( (string) $value );
+}
+
 /** @return array{api_key:string,api_secret:string,access_token:string,access_token_secret:string} */
 function credentials(): array {
 	static $cache = null;
@@ -256,31 +315,87 @@ function credentials(): array {
 		'access_token_secret' => 'X_ACCESS_TOKEN_SECRET',
 	);
 
-	$creds   = array();
-	$missing = array();
+	$creds    = array();
+	$problems = array();
+
 	foreach ( $map as $field => $env ) {
 		$value = getenv( $env );
-		if ( $value === false || trim( (string) $value ) === '' ) {
-			$missing[] = $env;
-			continue;
-		}
 		// Trailing newlines from `export X=$(cat file)` are a real and very
 		// confusing failure: they change the HMAC key and produce a bare 401.
-		$creds[ $field ] = trim( (string) $value );
+		$value = $value === false ? '' : trim( (string) $value );
+
+		$reason = $value === '' ? 'it is not set' : reject_reason( $value );
+
+		if ( $reason !== null ) {
+			$typed = prompt_needed( $env, $reason );
+			if ( $typed !== null ) {
+				$value  = $typed;
+				$reason = reject_reason( $value );
+			}
+		}
+
+		if ( $reason !== null ) {
+			$problems[ $env ] = $reason;
+			continue;
+		}
+
+		$creds[ $field ] = $value;
 	}
 
-	if ( $missing ) {
-		out( 'FATAL: missing environment variables: ' . implode( ', ', $missing ) );
+	if ( $problems ) {
 		out( '' );
-		out( 'Set all four, then re-run:' );
-		foreach ( $map as $env ) {
-			out( "    export {$env}='...'" );
+		out( 'STOPPED before making any request. No credits were spent.' );
+		out( '' );
+		out( 'These values cannot be real credentials:' );
+		foreach ( $problems as $env => $reason ) {
+			out( "  {$env} — {$reason}" );
 		}
+		out( '' );
+		out( 'Get the four values from console.x.com, in the Keys and tokens tab of' );
+		out( 'your App. You need exactly these four, and none of the others:' );
+		out( '' );
+		out( '  X_API_KEY              = API Key          (also called Consumer Key)' );
+		out( '  X_API_SECRET           = API Key Secret   (also called Consumer Secret)' );
+		out( '  X_ACCESS_TOKEN         = Access Token' );
+		out( '  X_ACCESS_TOKEN_SECRET  = Access Token Secret' );
+		out( '' );
+		out( 'The Bearer Token, Client ID and Client Secret are NOT used here.' );
+		out( '' );
+		out( 'Then either export them and re-run, replacing every placeholder with a' );
+		out( 'real value, or just re-run with none of them set and type them in when' );
+		out( 'this script asks.' );
 		exit( 2 );
 	}
 
 	$cache = $creds;
 	return $cache;
+}
+
+/**
+ * Explain why a value was refused, then offer to take it from the keyboard.
+ *
+ * @return string|null The typed value, or null when there is no terminal.
+ */
+function prompt_needed( string $env, string $reason ): ?string {
+	static $explained = false;
+
+	if ( ! function_exists( 'stream_isatty' ) || ! @stream_isatty( STDIN ) ) {
+		return null;
+	}
+
+	if ( ! $explained ) {
+		out( '' );
+		out( 'One or more credentials are missing or are still placeholders.' );
+		out( 'Type or paste each one below. Input is hidden where the terminal allows it.' );
+		out( 'Nothing is written to disk and nothing enters your shell history.' );
+		out( '' );
+		$explained = true;
+	}
+
+	out( "  {$env} was rejected because {$reason}." );
+	$typed = prompt_for( $env );
+
+	return $typed === '' ? null : $typed;
 }
 
 /* ------------------------------------------------------------------ */
@@ -508,7 +623,8 @@ if ( $r1['status'] !== 200 ) {
 	out( '' );
 	out( 'Check, in this order:' );
 	out( '  1. All four values are from the SAME App, copied with no trailing newline.' );
-	out( '  2. The App sits inside a Project. An App outside a Project fails all v2 calls.' );
+	out( '  2. If your console still uses Projects, the App must sit inside one.' );
+	out( '     The current console may not have Projects at all — see OQ-19.' );
 	out( '  3. App permissions are Read and Write.' );
 	out( '  4. The access token was regenerated AFTER permissions were set to Read and Write.' );
 	out( '  5. The system clock is correct. OAuth 1.0a rejects a skewed oauth_timestamp.' );

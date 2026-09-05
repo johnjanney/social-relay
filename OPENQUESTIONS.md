@@ -147,6 +147,8 @@ The brief instructs that where a source disagrees with it, the disagreement is s
 
 **One blocking row remains open: OQ-2.**
 
+*Attempt 1, 2026-09-05 — void, not a result.* The probe was run with all four credentials set to the literal string `...`, the placeholder from the pasted instructions; the masked output showed `(len=3)` for each. Step 1 returned HTTP 401 with `{"title":"Unauthorized"}`. That 401 says nothing about OQ-2 and the row stays open. Two things were fixed rather than noted: the script now refuses placeholder, whitespace-bearing and implausibly short values **before** any network call, and offers to take the credentials from the keyboard instead; and the step-1 troubleshooting text no longer asserts the Project requirement as fact (OQ-19). The one useful by-product: TLS, routing and request framing to `api.x.com` all work, since X returned a well-formed `application/problem+json` error rather than a transport failure.
+
 John runs `bin/verify-x-api.php` and pastes the output back. It is the only Phase 0 item that requires a real API call, and it is the only thing standing between here and the Specification Gate. The script is written, syntax-checked, and unrun; its signer is verified against RFC 5849 above, so a failure from the media endpoint will be attributable to the endpoint rather than to the signing code.
 
 Closed by the owner on 2026-09-05: OQ-4 (Social Relay / `social-relay`), OQ-5 (PHP 8.2), OQ-6 (GPL-2.0-or-later), OQ-11 (Hostinger, native cron), and OQ-16 (WordPress 6.5).
