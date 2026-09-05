@@ -4,7 +4,11 @@ Architecture Decision Records. One heading per decision, numbered from ADR-001.
 
 Each record uses the template in `PROJECTBRIEF.md` §12: Status, Date, Context, Decision, Consequences, Alternatives rejected.
 
-Status values: `proposed` → `accepted` → `superseded`. Every ADR below is **proposed**. None is accepted until John says so, and ADR-001 additionally cannot be accepted until OQ-2 returns a real API response.
+Status values: `proposed` → `accepted` → `superseded`.
+
+**Owner decisions of 2026-09-05.** John confirmed the name **Social Relay** / `social-relay`, a **PHP 8.2** floor, **GPL-2.0-or-later**, and **Hostinger** as the host, and accepted the recommendations attached to each ADR. ADR-003 and ADR-004 are therefore **accepted**. ADR-003's Decision section has been amended to fold in the salt-rotation mitigation that was previously only a recorded disagreement; the original recommendation and the reasoning that changed it are both preserved below, so nothing was altered silently.
+
+**ADR-001 and ADR-002 remain `proposed`,** and cannot move until OQ-2 returns a real API response. They are not blocked on John. They are blocked on a fact about X's API that nobody in this project yet has.
 
 From Phase 8 onward, every review finding that is declined rather than fixed becomes an ADR here.
 
@@ -58,7 +62,7 @@ I am not choosing between these now, because the choice depends on a fact I do n
 
 ## ADR-002 — Upload the featured image explicitly; do not rely on X's link-preview card
 
-**Status:** proposed
+**Status:** proposed — **blocked on OQ-2**, because it can only be delivered if ADR-001's auth method is accepted by the media endpoint
 
 **Date:** 2026-09-05
 
@@ -93,9 +97,9 @@ If there is no featured image, or the upload fails after retries, publish the te
 
 ## ADR-003 — Encrypt the four X secrets at rest with `sodium_crypto_secretbox`, keyed from `wp_salt('auth')`
 
-**Status:** proposed — see the disagreement below before accepting
+**Status:** **accepted** 2026-09-05, with the salt-rotation mitigation folded into the Decision
 
-**Date:** 2026-09-05
+**Date:** 2026-09-05 (amended 2026-09-05 on owner acceptance)
 
 **Context**
 
@@ -107,6 +111,13 @@ If there is no featured image, or the upload fails after retries, publish the te
 **Decision**
 
 Encrypt each of the four secrets with `sodium_crypto_secretbox` before storing it in the `srl_settings` option. Derive the 32-byte key from `wp_salt('auth')` — `wp_salt()` returns a string, not a 32-byte key, so it must be run through a KDF or hash to the correct length rather than truncated. Generate a fresh random nonce per encryption and store it alongside the ciphertext. Never echo a secret back into an input field: show a masked value and a "replace" control, so a saved credential cannot be read out of the settings page HTML by anyone who reaches wp-admin.
+
+**Amended 2026-09-05, on the owner accepting the mitigation recorded under Alternatives.** Stored values additionally carry, in a versioned envelope alongside the nonce and ciphertext:
+
+1. **A format-version byte**, so the envelope can change in a later release without stranding values written by an earlier one.
+2. **A short non-secret fingerprint of the derived key** — a truncated hash of the key, never the key itself. On load, the plugin recomputes the fingerprint and compares.
+
+On a fingerprint mismatch the plugin enters a distinct `credentials_unreadable` state. In that state it (a) shows an admin notice that names salt rotation as the likely cause and re-entering the four keys as the fix, (b) surfaces the same message on the settings page rather than only in a notice that can be dismissed and forgotten, and (c) **refuses to schedule new posts**, rather than scheduling posts that are guaranteed to fail at send time. It does not attempt to decrypt and it does not treat the condition as an API error. `SPEC.md` specifies the exact envelope layout, and this state is a required transition in the test suite.
 
 **Consequences**
 
@@ -121,7 +132,7 @@ Encrypt each of the four secrets with `sodium_crypto_secretbox` before storing i
 - *Encrypt with a key stored in the database next to the ciphertext.* Rejected: that is obfuscation, not encryption. It defends against nothing that matters.
 - *Use `openssl_encrypt` with AES-256-GCM.* Comparable security, but requires the OpenSSL extension, whereas sodium is in core. No advantage here.
 
-**Disagreement recorded — salt rotation destroys stored credentials silently**
+**Disagreement recorded — salt rotation destroys stored credentials silently** *(raised 2026-09-05; accepted by the owner the same day and folded into the Decision above; OQ-17 closed. Kept in full, because an ADR that hides why it changed is worth less than one that shows it.)*
 
 I agree with encrypting, with sodium, and with the masked-field rule. I disagree with keying from `wp_salt('auth')` without a recovery path, and I am recording this rather than changing the recommendation.
 
@@ -134,13 +145,13 @@ Two changes would close this without altering the decision:
 
 Both are small. Item 1 is a few bytes of stored metadata. Item 2 reuses the admin-notice mechanism FR-5.2 already requires. Together they convert a silent, misattributed failure into an accurate instruction.
 
-**This is a proposal, not an applied change.** The brief's recommendation stands as written above. If John accepts the mitigation, it goes into `SPEC.md` and OQ-17 closes; if not, OQ-17 closes as accepted risk and `README.md` documents it.
+**Outcome.** John accepted the mitigation on 2026-09-05. Both items are now part of the Decision above and go into `SPEC.md`. OQ-17 is closed. `README.md` still states the underlying limit the brief identified — that this is defence in depth only, and anyone holding both the database and the filesystem can decrypt — because the mitigation makes key loss *legible*, not impossible.
 
 ---
 
 ## ADR-004 — Use WP-Cron via `wp_schedule_single_event()`; do not ship Action Scheduler or any other scheduler
 
-**Status:** proposed
+**Status:** **accepted** 2026-09-05
 
 **Date:** 2026-09-05
 
@@ -166,6 +177,8 @@ Even with delay 0 the send goes through the scheduler (FR-3.2), so there is exac
 
 *Easier:* No tables beyond the log table. No dependency conflicts. Nothing to uninstall except options, meta, one table, and scheduled events. The whole scheduling layer is two WordPress core functions, which the WordPress test suite already supports directly. The retry backoff in FR-4.8 reuses the same mechanism, so retries need no second design.
 
+*Hostinger specifics, settled 2026-09-05 (OQ-11).* The host supports this decision without compromise. Single plans allow two cron jobs and Premium and above allow unlimited; the plugin needs one. Hostinger's own WordPress guide gives `define( 'DISABLE_WP_CRON', true );` and a `wget -O /dev/null -o /dev/null https://yoursite.com/wp-cron.php?doing_wp_cron` replacement, which is the exact shape this ADR needs. Two cautions carry into Phase 6, both recorded in `OPENQUESTIONS.md` under "Conflict: OQ-11". First, Hostinger recommends running that cron **twice an hour**; this plugin requires **every minute**, because a 30-minute interval turns a 60-minute delay into 60-to-90 minutes and turns delay-0 into "within half an hour". `INSTALLATION.md` must specify `* * * * *` *and say why*, so the owner does not later restore the host's default. Second, Hostinger documents that cron jobs "may be interrupted or fail to run altogether" when account resource limits are hit — which is precisely the condition FR-1.6's health panel exists to surface, and an argument for the panel being a required feature rather than a nicety.
+
 *Harder:* Timing accuracy is the site administrator's responsibility, not the plugin's, and the plugin can only observe and warn. On a site with no real cron and low traffic, posts sit in `scheduled` indefinitely — which §9 requires must not break anything, and which the health panel must make visible rather than leaving the owner to notice that nothing was posted. WP-Cron can fire an event more than once under concurrent requests, which is why FR-4.1's idempotency guard and FR-4.2's `sending` lock are load-bearing rather than defensive extras, and why a double-fire test is on the acceptance checklist. Long delays are vulnerable to anything that flushes the cron array.
 
 **Alternatives rejected**
@@ -173,4 +186,4 @@ Even with delay 0 the send goes through the scheduler (FR-3.2), so there is exac
 - *Bundle Action Scheduler.* Rejected: several megabytes and multiple tables to schedule one event per post, plus a real risk of conflicting with the copy WooCommerce already loaded. Fails §0's simplicity constraint by a wide margin.
 - *Ship a custom background worker or a loopback-request runner.* Rejected explicitly by brief §1.4, and it would mean owning a scheduler's failure modes for no gain over system cron.
 - *Post inline during the editor's save request when the delay is 0.* Rejected by FR-3.2: it creates a second send path to test, and it makes the editor's save wait on the X API, so a slow or hanging API call becomes a hung publish button.
-- *Use an external cron-ping service as the primary mechanism.* Not rejected, but not the plugin's business. It is one of the host options `INSTALLATION.md` will list, and depends on OQ-11.
+- *Use an external cron-ping service as the primary mechanism.* Rejected on 2026-09-05, and now moot: OQ-11 closed with the host confirmed as **Hostinger**, which provides native cron jobs in hPanel (Advanced → Cron Jobs). No third party needs to hold a key to whether this site's posts go out.

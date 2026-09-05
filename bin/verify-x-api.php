@@ -37,6 +37,12 @@
  * REQUIREMENTS
  *     PHP 8.1+ with the curl and hash extensions. No WordPress. No Composer.
  *
+ *     The plugin's own floor is PHP 8.2 (OQ-5, decided 2026-09-05). This probe
+ *     deliberately keeps a lower floor of its own: it is a throwaway diagnostic
+ *     meant to run wherever it is convenient, including a laptop or a shell that
+ *     is behind the production runtime. It is not plugin code and ships with
+ *     nothing.
+ *
  * CREDENTIALS — from the environment only. Nothing is read from a file and
  * nothing is written to disk.
  *
