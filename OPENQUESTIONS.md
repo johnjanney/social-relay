@@ -170,7 +170,9 @@ The brief instructs that where a source disagrees with it, the disagreement is s
 - **OQ-18** — every-minute cron on Hostinger. A two-minute look at hPanel. Decides whether FR-1.6's 5-minute staleness threshold is usable as written.
 - **OQ-19** — whether Apps still sit inside Projects. Closes the moment John says what the console showed. Affects setup wording only, no plugin code.
 
-None of the four blocks writing `SPEC.md`. OQ-18 and OQ-19 need one sentence each from John. OQ-1b and OQ-15 are measurements that belong to later phases by the brief's own design.
+None of the four blocked writing `SPEC.md`, which was drafted on 2026-09-05. OQ-18 and OQ-19 need one sentence each from John. OQ-1b and OQ-15 are measurements that belong to later phases by the brief's own design.
+
+`SPEC.md` §17 carries all four forward, alongside six items where the specification had to go beyond the brief. Those six are listed there rather than absorbed silently, so the Phase 2 reviewer and the owner see them at the gate.
 
 ### Facts measured on 2026-09-05 that `SPEC.md` must carry
 
