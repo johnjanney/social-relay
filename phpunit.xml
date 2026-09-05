@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<phpunit
+	bootstrap="tests/bootstrap.php"
+	backupGlobals="false"
+	colors="true"
+	convertErrorsToExceptions="true"
+	convertNoticesToExceptions="true"
+	convertWarningsToExceptions="true"
+	beStrictAboutTestsThatDoNotTestAnything="true"
+	>
+	<testsuites>
+		<!--
+			"unit" needs no WordPress and no database. It covers the pure logic:
+			the OAuth 1.0a signer, the weighted-length text algorithm, and the
+			secret-storage envelope. It runs anywhere PHP runs.
+		-->
+		<testsuite name="unit">
+			<directory suffix="Test.php">./tests/unit</directory>
+		</testsuite>
+		<!--
+			"integration" needs the WordPress test suite, supplied by wp-env.
+			It covers hooks, cron, post meta, the log table and the admin screens.
+		-->
+		<testsuite name="integration">
+			<directory suffix="Test.php">./tests/integration</directory>
+		</testsuite>
+	</testsuites>
+	<coverage>
+		<include>
+			<directory suffix=".php">./includes</directory>
+		</include>
+	</coverage>
+</phpunit>

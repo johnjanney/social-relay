@@ -1,0 +1,18 @@
+parameters:
+	level: 6
+	paths:
+		- social-relay.php
+		- includes
+		- admin
+		- uninstall.php
+	bootstrapFiles:
+		- tests/phpstan-bootstrap.php
+	scanDirectories:
+		- includes
+	excludePaths:
+		- vendor
+		- node_modules
+	treatPhpDocTypesAsCertain: false
+
+includes:
+	- vendor/szepeviktor/phpstan-wordpress/extension.neon

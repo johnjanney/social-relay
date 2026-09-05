@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: Static analysis and standards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: sodium, curl, mbstring, intl, json
+          coverage: none
+          tools: composer
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: PHP syntax check, every file
+        run: find . -path ./vendor -prune -o -name '*.php' -print0 | xargs -0 -n1 -P4 php -l
+
+      - name: PHPCS (WordPress Coding Standards)
+        run: ./vendor/bin/phpcs --report=full
+
+      - name: PHPStan (level 6)
+        run: ./vendor/bin/phpstan analyse --no-progress
+
+  unit:
+    name: Unit tests (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '8.2', '8.4' ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: sodium, curl, mbstring, intl, json
+          coverage: xdebug
+          tools: composer
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      # These need no WordPress and no database: the OAuth signer, the weighted
+      # length algorithm, and the secret storage envelope.
+      - name: PHPUnit — unit suite
+        run: ./vendor/bin/phpunit --testsuite unit
+
+  integration:
+    name: Integration (WP ${{ matrix.wp }}, PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '8.2', wp: '6.5' }
+          - { php: '8.4', wp: 'latest' }
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: wordpress_test
+        ports: [ '3306:3306' ]
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: sodium, curl, mbstring, intl, json, mysqli, gd
+          coverage: none
+          tools: composer
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Install the WordPress test suite
+        run: bash bin/install-wp-tests.sh wordpress_test root '' 127.0.0.1:3306 ${{ matrix.wp }}
+
+      - name: PHPUnit — integration suite
+        run: ./vendor/bin/phpunit --testsuite integration
+
+  guards:
+    name: Secrets and version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A credential committed by accident is not recoverable by deleting it
+      # later; the history keeps it. This is why the check blocks the merge.
+      - name: Secret scan
+        run: bash bin/scan-secrets.sh
+
+      - name: Version consistency
+        run: bash bin/check-version.sh

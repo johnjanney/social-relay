@@ -1,0 +1,35 @@
+{
+  "name": "johnjanney/social-relay",
+  "description": "Publish the title, featured image, and permalink of each newly published WordPress post to one X account, after a configurable delay.",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": ">=8.2"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.6",
+    "squizlabs/php_codesniffer": "^3.9",
+    "wp-coding-standards/wpcs": "^3.1",
+    "phpcompatibility/phpcompatibility-wp": "^2.1",
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "phpstan/phpstan": "^1.11",
+    "szepeviktor/phpstan-wordpress": "^1.3"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    },
+    "platform": {
+      "php": "8.2"
+    },
+    "platform-check": false,
+    "_comment_platform": "Dependencies resolve as if on PHP 8.2, the declared floor (OQ-5). platform-check is off so the dev tools also run on an 8.1 workstation; the plugin's own source is kept 8.1-parseable so `php -l` works everywhere, while PHPCS testVersion 8.2- still enforces the real floor statically."
+  },
+  "scripts": {
+    "lint": "phpcs",
+    "lint:fix": "phpcbf",
+    "analyse": "phpstan analyse",
+    "test:unit": "phpunit --testsuite unit",
+    "test": "phpunit"
+  }
+}
