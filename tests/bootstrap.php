@@ -21,7 +21,11 @@
 declare( strict_types = 1 );
 
 define( 'SRL_TESTS_DIR', __DIR__ );
-define( 'SRL_PLUGIN_DIR', dirname( __DIR__ ) );
+// Trailing slash is required: the plugin defines this as plugin_dir_path(),
+// which ends in one, and whichever definition lands first wins. Without the
+// slash the autoloader builds "...pluginincludes/class-plugin.php" and every
+// class silently fails to load.
+define( 'SRL_PLUGIN_DIR', dirname( __DIR__ ) . '/' );
 
 require_once SRL_PLUGIN_DIR . '/vendor/autoload.php';
 
@@ -56,6 +60,13 @@ if ( ! file_exists( $srl_tests_lib . '/includes/functions.php' ) ) {
 		"    vendor/bin/phpunit --testsuite unit\n"
 	);
 	exit( 1 );
+}
+
+// The WordPress test suite requires Yoast's PHPUnit Polyfills and will refuse
+// to boot without them. Pointing at the vendored copy is the documented way to
+// satisfy that without vendoring WordPress's own dev dependencies.
+if ( ! defined( 'WP_TESTS_PHPUNIT_POLYFILLS_PATH' ) ) {
+	define( 'WP_TESTS_PHPUNIT_POLYFILLS_PATH', SRL_PLUGIN_DIR . '/vendor/yoast/phpunit-polyfills' );
 }
 
 require_once $srl_tests_lib . '/includes/functions.php';

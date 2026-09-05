@@ -44,10 +44,17 @@ Current state of the build. Updated in the same commit as the code it describes.
 | PHPCS (WordPress standard) | **passing** | `vendor/bin/phpcs` |
 | PHPStan level 6 | **passing** | `vendor/bin/phpstan analyse` |
 | PHPUnit unit suite | **passing, 35 tests** | `vendor/bin/phpunit --testsuite unit` |
-| PHPUnit integration suite | **not yet written** | needs the WordPress test suite |
+| PHPUnit integration suite | **passing, 39 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
+| Full suite | **passing, 74 tests, 201 assertions** | run inside the wp-env tests container |
+| Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
 | CI on GitHub | **never run** | no remote is configured |
 
-**Honest gap.** `SPEC.md` §16 names 132 tests. 35 exist. The 35 cover the three pure-logic units — the signer, the text algorithm and the crypto envelope — which is where the defects actually were. Everything WordPress-dependent (hooks, cron, meta, the claim, the error matrix, the admin screens) is written but **not yet tested**, and "written and linted" is not "verified". This is the single largest piece of outstanding work.
+**Honest gap.** `SPEC.md` §16 names 132 tests. **74 exist.** The 74 cover the three pure-logic units, the scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema, and uninstall — which is where every defect found so far actually was. Not yet covered: the admin screens' rendering, the meta box save path end-to-end through a real editor request, the notices, and the email path. Those are written and linted but **not verified**, and that is not the same thing.
+
+Two real defects were found by the integration tests and fixed:
+
+- `reconcile()` marked a post `failed` but left its event scheduled. A stale event inside WordPress's ten-minute duplicate window would have silently swallowed the owner's next "Repost now".
+- The same hole existed on every terminal failure in `apply_result()`.
 
 ---
 

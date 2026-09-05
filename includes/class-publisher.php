@@ -303,6 +303,12 @@ class SRL_Publisher {
 		SRL_Post_Meta::fail( $post_id, $reason );
 		delete_post_meta( $post_id, SRL_Post_Meta::META_SENDING_SINCE );
 
+		// Clear any event still associated with this post. A terminally failed
+		// post should have none, but if one lingers WordPress will suppress a
+		// new event scheduled within ten minutes of it, silently swallowing
+		// the owner's "Repost now".
+		SRL_Scheduler::clear_send( $post_id );
+
 		SRL_Log::write(
 			SRL_Log::EVENT_FAILED,
 			$post_id,

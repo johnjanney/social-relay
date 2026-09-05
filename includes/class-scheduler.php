@@ -403,6 +403,13 @@ class SRL_Scheduler {
 					// Not retried automatically: a crash mid-send cannot be
 					// told apart from a send whose response was lost, and
 					// retrying would risk breaking INV-1. The owner decides.
+					//
+					// Any lingering event is cleared. A failed post that still
+					// has one is not just untidy: WordPress suppresses a new
+					// event scheduled within ten minutes of an existing
+					// identical one, so a stale event would silently swallow
+					// the owner's "Repost now".
+					self::clear_send( $post_id );
 					SRL_Post_Meta::fail( $post_id, 'stalled' );
 					SRL_Log::write( SRL_Log::EVENT_FAILED, $post_id, null, null, 'Send stalled and was abandoned.' );
 					++$resolved;
@@ -413,6 +420,7 @@ class SRL_Scheduler {
 			$due = (int) get_post_meta( $post_id, SRL_Post_Meta::META_SCHEDULED_AT, true );
 
 			if ( $due > 0 && ( $now - $due ) > self::LOST_EVENT_AFTER && ! self::has_pending_send( $post_id ) ) {
+				self::clear_send( $post_id );
 				SRL_Post_Meta::fail( $post_id, 'event_lost' );
 				SRL_Log::write( SRL_Log::EVENT_FAILED, $post_id, null, null, 'Scheduled event disappeared before it fired.' );
 				++$resolved;
