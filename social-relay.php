@@ -92,6 +92,7 @@ function srl_class_map(): array {
 		'SRL_Settings'     => 'class-settings.php',
 		'SRL_Crypto'       => 'class-crypto.php',
 		'SRL_Text'         => 'class-text.php',
+		'SRL_OAuth1'       => 'class-oauth1.php',
 		'SRL_Scheduler'    => 'class-scheduler.php',
 		'SRL_Publisher'    => 'class-publisher.php',
 		'SRL_Log'          => 'class-log.php',
