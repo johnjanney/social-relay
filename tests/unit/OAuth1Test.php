@@ -36,12 +36,12 @@ final class OAuth1Test extends TestCase {
 			'oauth_nonce'            => '7d8f3e4a',
 		);
 		$query = array(
-			'b5'  => '=%3D',
-			'a3'  => 'a',
-			'c@'  => '',
-			'a2'  => 'r b',
+			'b5' => '=%3D',
+			'a3' => 'a',
+			'c@' => '',
+			'a2' => 'r b',
 		);
-		$body = array(
+		$body  = array(
 			'c2' => '',
 			'a3' => '2 q',
 		);

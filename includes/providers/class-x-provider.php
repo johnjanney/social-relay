@@ -23,7 +23,7 @@ class SRL_X_Provider implements SRL_Provider {
 	/**
 	 * The only host this plugin ever contacts.
 	 *
-	 * upload.x.com is deliberately absent: it is the legacy v1.1 host that
+	 * Note that upload.x.com is deliberately absent: it is the legacy v1.1 host that
 	 * brief section 1.3 forbids building on, and the Phase 0 probe proved the
 	 * whole flow works against api.x.com alone (OQ-13).
 	 */
@@ -160,8 +160,8 @@ class SRL_X_Provider implements SRL_Provider {
 	/**
 	 * Apply the error matrix to a create-post response.
 	 *
-	 * @param array|WP_Error  $response Raw response.
-	 * @param SRL_Send_Result $result   Result being built.
+	 * @param array<string, mixed>|WP_Error $response Raw response.
+	 * @param SRL_Send_Result               $result   Result being built.
 	 * @return SRL_Send_Result
 	 */
 	private function interpret_create( $response, SRL_Send_Result $result ): SRL_Send_Result {
@@ -321,9 +321,9 @@ class SRL_X_Provider implements SRL_Provider {
 	/**
 	 * Assemble a multipart/form-data body.
 	 *
-	 * @param array<string, string>                                     $fields Simple fields.
+	 * @param array<string, string>                                          $fields Simple fields.
 	 * @param array{name:string, filename:string, type:string, bytes:string} $file  File part.
-	 * @param string                                                    $boundary Boundary.
+	 * @param string                                                         $boundary Boundary.
 	 * @return string
 	 */
 	private function multipart_body( array $fields, array $file, string $boundary ): string {

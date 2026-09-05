@@ -69,7 +69,7 @@ class SRL_Crypto {
 	/**
 	 * Derive an instance from a salt string.
 	 *
-	 * wp_salt() returns a string of arbitrary length, not a key. It MUST be
+	 * Note that wp_salt() returns a string of arbitrary length, not a key. It MUST be
 	 * hashed to length; truncating or padding it would discard entropy or
 	 * invent it.
 	 *

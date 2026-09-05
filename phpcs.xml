@@ -29,14 +29,39 @@
 		<exclude name="WordPress.WP.I18n.MissingTranslatorsComment"/>
 	</rule>
 
-	<!-- Everything is prefixed srl_ / SRL_ per PROJECTBRIEF section 5. -->
+	<!--
+		Everything is prefixed srl_ / SRL_ per PROJECTBRIEF section 5 and the
+		OQ-4 decision. The underscore is included so WPCS 3.x sees a four-
+		character prefix rather than rejecting "srl" as too short.
+	-->
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
 		<properties>
 			<property name="prefixes" type="array">
-				<element value="srl"/>
-				<element value="SRL"/>
+				<element value="srl_"/>
+				<element value="SRL_"/>
 			</property>
 		</properties>
+	</rule>
+
+	<!--
+		PROJECTBRIEF section 5 fixes the file map: includes/class-plugin.php,
+		includes/class-log.php and so on. WPCS would require
+		class-srl-plugin.php, repeating the prefix in every path. The brief is
+		normative here, so the sniff is switched off deliberately rather than
+		the file names being changed against it.
+	-->
+	<rule ref="WordPress.Files.FileName">
+		<exclude name="WordPress.Files.FileName.InvalidClassFileName"/>
+	</rule>
+
+	<!--
+		base64 in this project encodes the sodium_crypto_secretbox envelope for
+		storage in a text column. That is the opposite of obfuscation, and the
+		sniff exists to catch hidden payloads.
+	-->
+	<rule ref="WordPress.PHP.DiscouragedPHPFunctions">
+		<exclude name="WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode"/>
+		<exclude name="WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode"/>
 	</rule>
 
 	<rule ref="WordPress.WP.I18n">
@@ -51,4 +76,35 @@
 	<config name="minimum_wp_version" value="6.5"/>
 	<config name="testVersion" value="8.2-"/>
 	<rule ref="PHPCompatibilityWP"/>
+	<!--
+		Test files legitimately do things plugin code must not: define ABSPATH,
+		shim WordPress functions, and read $_SERVER['argv']. They ship in no
+		release (bin/build.sh asserts that), so the sniffs that exist to protect
+		a running site do not apply to them. Everything else in WPCS still does.
+	-->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment.Missing">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.Security.ValidatedSanitizedInput">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.WP.AlternativeFunctions">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Generic.Strings.UnnecessaryStringConcat">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+
+	<!--
+		Reading one local file the site already owns. WP_Filesystem exists for
+		writes and for remote transports; using it here would add an
+		initialisation dance and a credentials prompt to read bytes off disk.
+	-->
+	<rule ref="WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents">
+		<exclude-pattern>/includes/providers/class-x-provider.php</exclude-pattern>
+	</rule>
+
 </ruleset>

@@ -32,10 +32,10 @@ require_once SRL_PLUGIN_DIR . '/vendor/autoload.php';
  * reads the command line. Defaulting to "WordPress needed" would make the unit
  * suite fail on a machine without the test library, which defeats its purpose.
  */
-$srl_argv         = $_SERVER['argv'] ?? array();
-$srl_wants_unit   = in_array( 'unit', $srl_argv, true );
-$srl_wants_intgr  = in_array( 'integration', $srl_argv, true );
-$srl_needs_wp     = $srl_wants_intgr || ! $srl_wants_unit;
+$srl_argv        = $_SERVER['argv'] ?? array();
+$srl_wants_unit  = in_array( 'unit', $srl_argv, true );
+$srl_wants_intgr = in_array( 'integration', $srl_argv, true );
+$srl_needs_wp    = $srl_wants_intgr || ! $srl_wants_unit;
 
 if ( ! $srl_needs_wp ) {
 	require_once SRL_TESTS_DIR . '/unit-bootstrap.php';

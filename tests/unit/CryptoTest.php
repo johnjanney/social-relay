@@ -86,9 +86,9 @@ final class CryptoTest extends TestCase {
 
 		// Flip a byte deep inside the ciphertext, leaving version and
 		// fingerprint intact.
-		$raw           = base64_decode( substr( $stored, 5 ), true );
+		$raw                       = base64_decode( substr( $stored, 5 ), true );
 		$raw[ strlen( $raw ) - 1 ] = chr( ord( $raw[ strlen( $raw ) - 1 ] ) ^ 0xFF );
-		$tampered      = 'srl1:' . base64_encode( $raw );
+		$tampered                  = 'srl1:' . base64_encode( $raw );
 
 		$this->assertSame( SRL_Crypto::STATE_OK, $crypto->inspect( $tampered ), 'fingerprint still matches' );
 		$this->assertNull( $crypto->decrypt( $tampered ), 'authenticated encryption must reject tampering' );

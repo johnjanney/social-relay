@@ -102,7 +102,6 @@ function srl_class_map(): array {
 		'SRL_Notices'      => 'class-notices.php',
 		'SRL_Post_Payload' => 'class-post-payload.php',
 		'SRL_Send_Result'  => 'class-send-result.php',
-		'SRL_Crypto'       => 'class-crypto.php',
 		'SRL_Provider'     => 'providers/interface-provider.php',
 		'SRL_X_Provider'   => 'providers/class-x-provider.php',
 	);
@@ -158,7 +157,7 @@ register_deactivation_hook( __FILE__, 'srl_deactivate' );
 /**
  * Boot.
  */
-function srl(): SRL_Plugin {
+function srl_plugin(): SRL_Plugin {
 	static $instance = null;
 	if ( null === $instance ) {
 		$instance = new SRL_Plugin();
@@ -166,12 +165,12 @@ function srl(): SRL_Plugin {
 	return $instance;
 }
 
-// Deferred deliberately: passing array( srl(), ... ) here would construct the
+// Deferred deliberately: passing array( srl_plugin(), ... ) here would construct the
 // plugin at file-load time, before plugins_loaded, which is earlier than any
 // hook needs and earlier than translations are available.
 add_action(
 	'plugins_loaded',
 	function (): void {
-		srl()->register_hooks();
+		srl_plugin()->register_hooks();
 	}
 );

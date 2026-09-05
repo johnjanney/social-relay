@@ -329,8 +329,8 @@ class SRL_Text {
 				$units[] = $part;
 				continue;
 			}
-			$matches = array();
-			if ( preg_match_all( '/\X/u', $part, $matches ) && isset( $matches[0] ) ) {
+				$matches = array();
+			if ( preg_match_all( '/\X/u', $part, $matches ) ) {
 				foreach ( $matches[0] as $cluster ) {
 					$units[] = $cluster;
 				}
@@ -429,7 +429,14 @@ class SRL_Text {
 			$title = self::truncate( $title, $title_budget );
 		}
 
-		$line = trim( implode( ' ', array_filter( array( $prefix, $title, $suffix ), 'strlen' ) ) );
+		$pieces = array();
+		foreach ( array( $prefix, $title, $suffix ) as $piece ) {
+			if ( '' !== $piece ) {
+				$pieces[] = $piece;
+			}
+		}
+
+		$line = trim( implode( ' ', $pieces ) );
 
 		return '' === $line ? $permalink : $line . "\n" . $permalink;
 	}
@@ -449,7 +456,6 @@ class SRL_Text {
 			return $text;
 		}
 
-
 		// Reserve the ellipsis by measuring it, never by assuming.
 		//
 		// U+2026 weighs 2, not 1: it sits in the gap between twitter-text's
@@ -463,9 +469,9 @@ class SRL_Text {
 			return self::ELLIPSIS;
 		}
 
-		$kept   = '';
-		$used   = 0;
-		$marks  = array();
+		$kept  = '';
+		$used  = 0;
+		$marks = array();
 
 		foreach ( self::units( $text ) as $cluster ) {
 			$weight = self::weigh_unit( $cluster );

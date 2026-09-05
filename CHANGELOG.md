@@ -27,6 +27,13 @@ Every commit that changes behaviour adds its line here in the same commit.
 - Weighted-length text algorithm (`SRL_Text`), verified against X's own published
   `twitter-text` conformance fixtures (22/22).
 - Log table, usage counter and cron health classes.
+- Settings storage with encrypted credentials and a `credentials_unreadable`
+  state that names salt rotation as the cause rather than blaming the keys.
+- Scheduler with nine guards, including skips for imports, bulk edit and posts
+  older than the freshness window.
+- Send pipeline with an atomic compare-and-swap claim, the 5/15/60-minute retry
+  backoff, and media-id reuse across retries.
+- Meta box, settings page, admin notices, and uninstall.
 
 ### Fixed
 

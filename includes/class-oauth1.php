@@ -75,7 +75,7 @@ class SRL_OAuth1 {
 	/**
 	 * RFC 3986 percent-encoding, which is what OAuth 1.0a requires.
 	 *
-	 * rawurlencode() is already RFC 3986: it leaves A-Z a-z 0-9 - . _ ~
+	 * Note that rawurlencode() is already RFC 3986: it leaves A-Z a-z 0-9 - . _ ~
 	 * unreserved and encodes everything else. urlencode() is NOT correct here,
 	 * because it encodes a space as '+'. That single substitution produces a
 	 * valid-looking request that fails with a bare 401 and no explanation.
@@ -152,10 +152,11 @@ class SRL_OAuth1 {
 	 * @param string|null $nonce     Override the nonce. Tests only.
 	 * @param int|null    $timestamp Override the timestamp. Tests only.
 	 * @return string
+	 * @throws InvalidArgumentException When the URL cannot be parsed.
 	 */
 	public function authorization_header( string $method, string $url, ?string $nonce = null, ?int $timestamp = null ): string {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url -- This class is deliberately WordPress-free so the unit suite can verify the signer without loading WordPress; wp_parse_url() would break that.
-		$parts    = parse_url( $url );
+		$parts = parse_url( $url );
 		if ( ! is_array( $parts ) ) {
 			// parse_url returns false only for a seriously malformed URL. The
 			// caller always passes a constant-derived URL, so this is a
@@ -184,7 +185,6 @@ class SRL_OAuth1 {
 			'oauth_version'          => '1.0',
 		);
 
-		/** @var array<string, string> $query_params */
 		$base = self::base_string( $method, $base_url, $query_params, $oauth_params );
 
 		$signing_key = self::encode( $this->api_secret ) . '&' . self::encode( $this->access_token_secret );
@@ -202,7 +202,10 @@ class SRL_OAuth1 {
 	}
 
 	/**
-	 * Whether all four credentials are non-empty.
+	 * Whether all four credentials are present.
+	 *
+	 * Checked before any request is attempted, so a half-configured plugin
+	 * fails on the settings page rather than with a 401 hours later.
 	 *
 	 * @return bool
 	 */

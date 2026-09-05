@@ -46,7 +46,7 @@ class SRL_Usage {
 			$usage[ $month ] = array();
 		}
 
-		$current                    = isset( $usage[ $month ][ $endpoint ] ) ? (int) $usage[ $month ][ $endpoint ] : 0;
+		$current                      = isset( $usage[ $month ][ $endpoint ] ) ? (int) $usage[ $month ][ $endpoint ] : 0;
 		$usage[ $month ][ $endpoint ] = $current + 1;
 
 		update_option( self::OPTION, $usage, false );

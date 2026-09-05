@@ -81,7 +81,7 @@ class SRL_Log {
 	/**
 	 * Create or update the table.
 	 *
-	 * dbDelta is whitespace-sensitive: two spaces after PRIMARY KEY, one space
+	 * Note that dbDelta is whitespace-sensitive: two spaces after PRIMARY KEY, one space
 	 * around each definition, KEY rather than INDEX. Deviating makes dbDelta
 	 * believe the schema changed and reissue ALTER statements on every check.
 	 *
@@ -122,6 +122,7 @@ class SRL_Log {
   KEY created_at (created_at)
 ) {$charset_collate};";
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.SchemaChange -- Creating this plugin's own table is the point of this method.
 		dbDelta( $sql );
 
 		update_option( self::DB_VERSION_OPTION, self::DB_VERSION, true );
@@ -152,8 +153,10 @@ class SRL_Log {
 	 * @param int         $post_id     Post id, or 0 for events not about a post.
 	 * @param int|null    $http_status HTTP status, or null for a transport error.
 	 * @param string|null $remote_id   The X post id, when there is one.
-	 * @param string      $message     Free text or a response body. Truncated.
-	 * @param string      $provider    Provider id.
+	 * @param string      $message      Free text or a response body. Truncated.
+	 * @param string      $provider     Provider id.
+	 * @param int|null    $scheduled_at UTC timestamp the send was scheduled for.
+	 * @param int|null    $sent_at      UTC timestamp the send completed.
 	 * @return void
 	 */
 	public static function write(
@@ -231,10 +234,12 @@ class SRL_Log {
 		$limit = max( 1, min( 500, $limit ) );
 		$table = self::table_name();
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table name cannot be a placeholder; $limit is an integer bounded above.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table name cannot be a placeholder; $limit is an integer bounded above.
 		$rows = $wpdb->get_results(
 			$wpdb->prepare( "SELECT * FROM {$table} ORDER BY id DESC LIMIT %d", $limit )
 		);
+
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		return is_array( $rows ) ? $rows : array();
 	}
@@ -252,7 +257,7 @@ class SRL_Log {
 		$limit = max( 1, min( 500, $limit ) );
 		$table = self::table_name();
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table name cannot be a placeholder; both values are prepared.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table name cannot be a placeholder; both values are prepared.
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT * FROM {$table} WHERE post_id = %d ORDER BY id DESC LIMIT %d",
@@ -260,6 +265,8 @@ class SRL_Log {
 				$limit
 			)
 		);
+
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		return is_array( $rows ) ? $rows : array();
 	}
@@ -275,7 +282,7 @@ class SRL_Log {
 		$table  = self::table_name();
 		$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( self::RETENTION_DAYS * DAY_IN_SECONDS ) );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table name cannot be a placeholder; both values are prepared.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table name cannot be a placeholder; both values are prepared.
 		$deleted = $wpdb->query(
 			$wpdb->prepare(
 				"DELETE FROM {$table} WHERE created_at < %s LIMIT %d",
@@ -283,6 +290,8 @@ class SRL_Log {
 				self::PRUNE_BATCH
 			)
 		);
+
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		return is_int( $deleted ) ? $deleted : 0;
 	}
@@ -310,8 +319,9 @@ class SRL_Log {
 
 		$table = self::table_name();
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table name cannot be a placeholder; no user input is involved.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Dropping this plugin's own table on uninstall is the point of this method.
 		$wpdb->query( "DROP TABLE IF EXISTS {$table}" );
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**
