@@ -8,7 +8,7 @@ Status values: `proposed` → `accepted` → `superseded`.
 
 **Owner decisions of 2026-09-05.** John confirmed the name **Social Relay** / `social-relay`, a **PHP 8.2** floor, **GPL-2.0-or-later**, and **Hostinger** as the host, and accepted the recommendations attached to each ADR. ADR-003 and ADR-004 are therefore **accepted**. ADR-003's Decision section has been amended to fold in the salt-rotation mitigation that was previously only a recorded disagreement; the original recommendation and the reasoning that changed it are both preserved below, so nothing was altered silently.
 
-**ADR-001 and ADR-002 remain `proposed`,** and cannot move until OQ-2 returns a real API response. They are not blocked on John. They are blocked on a fact about X's API that nobody in this project yet has.
+**All four ADRs are now `accepted`.** ADR-001 and ADR-002 were unblocked on 2026-09-05 when the OQ-2 probe returned HTTP 200 from every media-upload endpoint under OAuth 1.0a. The contingency planning recorded in ADR-001's Alternatives is retained, not deleted: it is the record of a risk retired by measurement rather than assumed away, and it is the plan that would have been executed had the result gone the other way.
 
 From Phase 8 onward, every review finding that is declined rather than fixed becomes an ADR here.
 
@@ -16,7 +16,7 @@ From Phase 8 onward, every review finding that is declined rather than fixed bec
 
 ## ADR-001 — Use OAuth 1.0a with owner-generated user tokens; do not build OAuth 2.0 PKCE
 
-**Status:** proposed — **blocked on OQ-2**
+**Status:** **accepted** 2026-09-05, on the OQ-2 probe result
 
 **Date:** 2026-09-05
 
@@ -27,7 +27,7 @@ The site owner posts to their own X account. There is no third-party user to aut
 - **VERIFIED** (brief §1.2) X API v2 requires the App to sit inside a Project in the Developer Console. An App outside a Project fails on v2 calls.
 - **VERIFIED** (brief §1.2) Two user-context methods exist. OAuth 1.0a uses four static strings generated once in the Console. OAuth 2.0 Authorization Code with PKCE needs a public callback endpoint, an `offline.access` scope, and refresh-token rotation.
 - **VERIFIED 2026-09-05** <https://docs.x.com/x-api/media/media-upload-initialize> lists media upload's authorization schemes as `OAuth2UserToken: [media.write]` and `UserToken: []`, where `UserToken` is OAuth 1.0a User Context. On the documented behaviour, OAuth 1.0a is sufficient for the whole pipeline.
-- **UNVERIFIED** Developer-forum thread titles suggest OAuth 1.0a is rejected with 403 by `/2/media/upload` in practice. I could not read the threads; `devcommunity.x.com` returned HTTP 403. Tracked as OQ-2.
+- ~~**UNVERIFIED** Developer-forum thread titles suggest OAuth 1.0a is rejected with 403 by `/2/media/upload` in practice.~~ **Settled 2026-09-05 and struck through rather than deleted, so the record shows what was believed and how it was tested.** A live run signed with OAuth 1.0a returned HTTP 200 from `initialize`, `append`, `finalize`, and the one-shot upload, each response carrying `x-access-level: read-write`, after `GET /2/users/me` had already returned 200 and thereby proved the signer. The documentation was accurate. The thread titles were not evidence.
 - Refresh-token expiry is a silent failure mode: the plugin keeps working until it suddenly does not, at a moment nobody is watching. A delayed-post plugin is exactly where that failure is least visible.
 
 **Decision**
@@ -46,9 +46,11 @@ Implement OAuth 1.0a HMAC-SHA1 user-context signing only. The owner pastes API K
 - *App-only Bearer token.* Rejected: app-only context cannot post on behalf of a user.
 - *A third-party OAuth library via Composer.* Rejected under §0's simplicity constraint and §5's "no Composer runtime dependencies". Signing is ~80 lines; a dependency is a larger surface than the code it replaces.
 
-**Disagreement recorded — the contingency the brief does not state**
+**Disagreement recorded, and resolved 2026-09-05 — the contingency the brief did not state**
 
-I do not disagree with choosing OAuth 1.0a. I disagree with treating it as settled before OQ-2 returns.
+*Outcome first: the probe returned 200 on every media call, so none of the three options below was needed and this ADR stands as written. The reasoning is kept because it is the reason the question was asked at all.*
+
+I did not disagree with choosing OAuth 1.0a. I disagreed with treating it as settled before OQ-2 returned.
 
 The brief recommends OAuth 1.0a in §1.2 and separately requires the featured image in §1.3 and FR-4.4, but the two are only jointly satisfiable if `/2/media/upload` actually accepts OAuth 1.0a. Documentation says it does. Thread titles suggest it does not. If the live call comes back 403 while `GET /2/users/me` succeeds with the same credentials, then this ADR and ADR-002 are in direct conflict and one of them has to give. The available options, in the order I would take them:
 
@@ -58,19 +60,23 @@ The brief recommends OAuth 1.0a in §1.2 and separately requires the featured im
 
 I am not choosing between these now, because the choice depends on a fact I do not have. I am recording that the choice exists so it is not discovered mid-implementation. **This ADR stays `proposed` until OQ-2 closes.**
 
+**2026-09-05 — OQ-2 closed VERIFIED. Option 1 is unnecessary, option 2 is unnecessary, option 3 is unnecessary. ADR-001 is accepted unchanged.** The cost of asking was one API call and about a cent. The cost of assuming, had the assumption been wrong, would have been discovering it in Phase 5 with the settings page, the scheduler, and the provider already built around four static strings.
+
 ---
 
 ## ADR-002 — Upload the featured image explicitly; do not rely on X's link-preview card
 
-**Status:** proposed — **blocked on OQ-2**, because it can only be delivered if ADR-001's auth method is accepted by the media endpoint
+**Status:** **accepted** 2026-09-05, on the OQ-2 probe result
 
-**Date:** 2026-09-05
+**Date:** 2026-09-05 (amended 2026-09-05 to pin the upload path)
 
 **Context**
 
 - **VERIFIED** (brief §1.3) X does not fetch an image from a URL at post time. Attaching an image means uploading the bytes, receiving a `media_id`, and passing it in `media.media_ids` on the create-post call.
 - **VERIFIED** (brief §1.3) The v1.1 media upload endpoint is legacy. Build on v2.
 - **VERIFIED 2026-09-05** <https://docs.x.com/x-api/media/quickstart/media-upload-chunked> — the v2 upload endpoints are on `api.x.com`, and the stated size limit for `media_category=tweet_image` is 5 MB.
+- **VERIFIED 2026-09-05 by live API call** (OQ-2, OQ-13, OQ-14). The whole flow works under OAuth 1.0a against `api.x.com` alone. Two upload paths exist and both returned 200: the three-step `initialize` → `append` → `finalize`, and a **one-shot `POST /2/media/upload`** carrying `media_category` and `media` as one `multipart/form-data` request.
+- **VERIFIED 2026-09-05 by live API call** — uploaded media reports `expires_after_secs: 86400`. Media is usable for 24 hours after upload.
 - The alternative is to post the URL alone and let X's crawler build a card from the page's `og:image`. That is less code, but it depends on the site emitting correct Open Graph tags, on X's crawler reaching the page, and on X's card rendering, which has changed repeatedly since 2023. None of those three is under the plugin's control.
 - The owner asked for the featured image to be posted.
 
@@ -78,20 +84,28 @@ I am not choosing between these now, because the choice depends on a fact I do n
 
 Upload the featured image explicitly. Read the file from the local filesystem, never over HTTP — the site may be behind basic auth, a staging password, or a CDN, and an HTTP self-fetch turns a local file read into a network dependency that fails in exactly those environments. Downscale if the file exceeds the byte or pixel limit. Upload via the v2 media endpoint, then attach the returned `media_id` to the post.
 
+**Amended 2026-09-05, once the probe showed both paths working.** Use the **one-shot `POST /2/media/upload`** — a single `multipart/form-data` request with `media_category=tweet_image` and the file in `media` — not the three-step chunked flow. One call instead of three, one failure point instead of three, and §0 requires the design with fewer moving parts when both meet the requirement. The chunked flow is documented as the fallback should an image ever exceed what one request can carry; it is not built in v1.
+
+Two measured details bind the implementation:
+
+1. **Upload at send time, never at schedule time.** Media expires 86400 seconds after upload, and FR-1.2 allows a delay of up to 72 hours — three times the media lifetime. Uploading early would silently break exactly the long-delay case the feature exists to serve. This also keeps ADR-002 consistent with FR-4.3, which already reads title and permalink at send time.
+2. **Do not assume one response shape.** The two paths return different keys for the same data: `finalize` gives `image.height` and `image.width`, the one-shot gives `image.h` and `image.w`. The plugin reads only `data.id`, which is stable across both, and treats the dimension keys as absent unless proven present. Relatedly, X reported `size: 100` for an 89-byte source PNG on both paths, so the uploaded size must never be validated against the local file size.
+
 If there is no featured image, or the upload fails after retries, publish the text-and-URL post anyway and record `image_omitted = true` with the reason (brief §1.3 requirement, FR-4.4). The image is not allowed to block the post.
 
 **Consequences**
 
 *Easier:* The image is deterministic. What the plugin uploads is what appears, independent of crawler behaviour, Open Graph plugins, and card-format changes. It works for a site that is not publicly reachable by X's crawler at post time. Failures are visible in the log rather than silently absent from the timeline.
 
-*Harder:* One to three extra API calls per post, of unknown price (OQ-1b). More failure modes: missing file on disk, unsupported MIME type, oversize file, image editor unavailable, upload timeout, media processing failure. Each needs a fixture in the test suite and a defined fallback. Adds a dependency on `wp_get_image_editor()` and therefore on GD or Imagick being present. The exact call shape is not yet settled — see OQ-14 (one-shot vs chunked).
+*Harder:* **One** extra API call per post, of unknown price (OQ-1b) — reduced from the one-to-three the chunked flow would have cost. More failure modes: missing file on disk, unsupported MIME type, oversize file, image editor unavailable, upload timeout, media processing failure. Each needs a fixture in the test suite and a defined fallback. Adds a dependency on `wp_get_image_editor()` and therefore on GD or Imagick being present. The exact call shape is not yet settled — see OQ-14 (one-shot vs chunked).
 
 **Alternatives rejected**
 
 - *Rely on X's link-preview card via `og:image`.* Rejected: three dependencies outside the plugin's control, and it does not satisfy the owner's stated requirement.
 - *Fetch the image over HTTP from the permalink.* Rejected: breaks on non-public and password-protected sites, and adds a network round trip for a file already on disk.
 - *Build on the v1.1 upload endpoint.* Rejected by brief §1.3; it is legacy, and it is the host `upload.x.com` that OQ-13 proposes to drop from the allowlist.
-- *Upload at schedule time and reuse the `media_id` at send time.* Rejected: `media_id` lifetime is undocumented for this use, and FR-4.3 already establishes that content is read at send time, not schedule time.
+- *Upload at schedule time and reuse the `media_id` at send time.* Rejected, and as of 2026-09-05 **measurably wrong**, not merely unattractive: media expires after 86400 seconds while FR-1.2 permits a 72-hour delay. This was rejected on the general principle that FR-4.3 reads content at send time; the probe then supplied the specific number that makes it a correctness bug rather than a style preference.
+- *Use the three-step chunked upload.* Rejected on 2026-09-05 after both paths were confirmed working. Three calls, three failure points and more retry logic, for an image the brief already caps at 5 MB. Retained as the documented fallback.
 
 ---
 
