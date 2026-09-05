@@ -1,0 +1,37 @@
+# Dependencies
+/vendor/
+/node_modules/
+
+# Build output
+/build/
+/dist/
+*.zip
+
+# wp-env / local WordPress
+/.wp-env.override.json
+/wordpress/
+/wordpress-develop/
+
+# Test and analysis artefacts
+/.phpunit.result.cache
+/coverage/
+/clover.xml
+/.phpcs.cache
+/phpstan-baseline.neon
+
+# Editor and OS noise
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Windows/WSL zone metadata
+*:Zone.Identifier
+
+# Never commit credentials. bin/verify-x-api.php reads from the environment
+# and writes nothing, but a stray env file must not slip in.
+.env
+.env.*
+*.env
