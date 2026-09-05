@@ -37,6 +37,14 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ### Fixed
 
+- The one-minute cron schedule was registered on `plugins_loaded`, which does not
+  fire for the plugin being activated, so the heartbeat was never scheduled. The
+  cron health panel could never turn green and the reconciliation scan never ran.
+  Found by activating the plugin on a real WordPress site.
+- A terminally failed post kept its scheduled event, and a stale event inside
+  WordPress's ten-minute duplicate window would silently swallow the owner's next
+  "Repost now".
+
 - Three counting defects found by testing against X's fixtures rather than against
   the plugin's own counter: PCRE2's `\X` merges adjacent ZWJ emoji (140 family emoji
   counted 2 instead of 280); an over-permissive URL matcher counted a 12,000-character

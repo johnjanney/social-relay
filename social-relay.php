@@ -120,6 +120,20 @@ spl_autoload_register(
 	}
 );
 
+/*
+ * The custom cron schedule is registered here, at file scope, and NOT inside
+ * SRL_Plugin::register_hooks().
+ *
+ * register_hooks() runs on plugins_loaded, and plugins_loaded does not fire
+ * again for the plugin being activated in that same request. The activation
+ * hook would therefore call wp_schedule_event() with an unregistered schedule
+ * name, which returns false silently. The heartbeat would never exist, so the
+ * cron health panel could never turn green and the reconciliation scan in
+ * SRL_Scheduler would never run -- which would leave INV-7 with no enforcement
+ * whatsoever. Caught by activating the plugin on a real site.
+ */
+add_filter( 'cron_schedules', array( 'SRL_Cron_Health', 'add_schedule' ) ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- A one-minute schedule is the point; see SPEC.md 11.3.
+
 /**
  * Activation.
  *
@@ -133,6 +147,18 @@ function srl_activate(): void {
 	SRL_Settings::install_defaults();
 	SRL_Cron_Health::schedule_heartbeat();
 	SRL_Log::schedule_prune();
+
+	// Fail loudly rather than silently: without the heartbeat there is no
+	// reconciliation pass and no honest cron health reading.
+	if ( ! wp_next_scheduled( SRL_Cron_Health::HOOK ) ) {
+		SRL_Log::write(
+			SRL_Log::EVENT_FAILED,
+			0,
+			null,
+			null,
+			'Could not schedule the heartbeat on activation; cron health and reconciliation will not run.'
+		);
+	}
 }
 register_activation_hook( __FILE__, 'srl_activate' );
 

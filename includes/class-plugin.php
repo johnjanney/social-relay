@@ -30,7 +30,9 @@ class SRL_Plugin {
 		// in-place update, so the check has to run on load.
 		add_action( 'plugins_loaded', array( SRL_Log::class, 'maybe_upgrade' ), 20 );
 
-		add_filter( 'cron_schedules', array( SRL_Cron_Health::class, 'add_schedule' ) ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- A one-minute schedule is the point; see SPEC.md 11.3.
+		// cron_schedules is registered in social-relay.php at file scope, not
+		// here: plugins_loaded does not fire for the plugin being activated,
+		// and the activation hook needs the schedule to already exist.
 
 		// Both scheduling and cancellation. accepted_args must be 3, and the
 		// order is ( new, old, post ): reversing the first two produces a
