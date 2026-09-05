@@ -102,6 +102,7 @@ function srl_class_map(): array {
 		'SRL_Notices'      => 'class-notices.php',
 		'SRL_Post_Payload' => 'class-post-payload.php',
 		'SRL_Send_Result'  => 'class-send-result.php',
+		'SRL_Crypto'       => 'class-crypto.php',
 		'SRL_Provider'     => 'providers/interface-provider.php',
 		'SRL_X_Provider'   => 'providers/class-x-provider.php',
 	);
