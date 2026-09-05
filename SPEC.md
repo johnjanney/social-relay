@@ -1,8 +1,9 @@
 # SPEC.md — Social Relay
 
-**Status:** DRAFT — awaiting Phase 2 review and the Specification Gate.
-**Spec version:** 1.0-draft.1
+**Status:** DRAFT — Phase 2 review complete, all 29 findings accepted and applied. Awaiting the Specification Gate.
+**Spec version:** 1.0-draft.2
 **Date:** 2026-09-05
+**Review:** `reviews/spec-review-1.md` — 4 blocker, 13 major, 11 minor, 1 question. Every finding was accepted; none was declined. The response is summarised in §19.
 **Inputs:** `PROJECTBRIEF.md` v0.1, `DECISIONS.md` ADR-001..004 (all accepted), `OPENQUESTIONS.md` (no blocking row open).
 
 > **Specification Gate.** When the owner approves this document, they write `APPROVED` and the date at the top of this file. Until then no plugin code is written. This line is the gate marker; do not remove it.
@@ -11,7 +12,7 @@
 
 ## 0. How to read this document
 
-1. This is the implementation contract. Where it disagrees with `PROJECTBRIEF.md`, the brief wins unless this document names the disagreement explicitly and gives the evidence. There are four such places, all collected in §17.
+1. This is the implementation contract. Where it disagrees with `PROJECTBRIEF.md`, the brief wins unless this document names the disagreement explicitly and gives the evidence. Every such place is collected in §17. (Deliberately not stated as a count: the first draft said "four", §17 listed six, and four more were unlisted. A number here goes stale silently, which is the exact failure the promise exists to prevent.)
 2. **MUST** is fixed. **SHOULD** is a default that an ADR may overturn. **OPEN** is an unresolved item and is listed in §17.
 3. Every functional requirement in §13 carries at least one named test in §16. A requirement with no test is a defect in this document, not a matter of judgement.
 4. Facts labelled **[MEASURED]** came from the live probe run of `bin/verify-x-api.php` on 2026-09-05 at 22:49 UTC. Those are the strongest facts in this document. Facts labelled **[DOC]** came from published documentation with a URL and read date. Facts labelled **[OPEN]** are not yet established.
@@ -46,9 +47,10 @@ These hold at every point in the codebase. A change that breaks one of these is 
 - **INV-1** A WordPress post is sent to X **at most once**, ever, unless the owner explicitly requests a repost through FR-2.5. Enforced by persisted post meta, never by in-memory state.
 - **INV-2** The plugin **never** calls the X API during an editor save request, or during any request that a human is waiting on. Every send happens inside a cron event.
 - **INV-3** The plugin makes outbound requests to **`api.x.com` only**. The host is a compile-time constant. It is never read from settings, filters, or the database.
-- **INV-4** Every database query goes through `$wpdb->prepare()`. No interpolated variable ever reaches `$wpdb->query()`.
+- **INV-4** No value from a request, from the database, or from any external source is ever concatenated into SQL. Table names come only from `$wpdb` properties (`$wpdb->prefix`, `$wpdb->postmeta`, `$wpdb->posts`). Every value is a `prepare()` placeholder. *(Reworded after review finding 11: the original phrasing — "no interpolated variable ever reaches `$wpdb->query()`" — prohibited `{$wpdb->postmeta}`, which the mandatory compare-and-swap in §11.4 requires, so the security control would have failed the build on day one on the plugin's own required code.)*
 - **INV-5** A failure is always recorded. The plugin never swallows an error into silence.
 - **INV-6** The featured image never blocks the post. If the image cannot be uploaded, the text-and-URL post still goes out.
+- **INV-7** A post is never left in a non-terminal state with nothing scheduled to move it. Every path that writes `scheduled` or `sending` either has a live event, or is reachable by the reconciliation pass in §11.6. *(Added after review findings 3 and 4: both blockers were instances of this, and neither was catchable by any stated rule.)*
 
 ---
 
@@ -76,6 +78,12 @@ Two further options, both autoload **no**:
 |---|---|---|
 | `srl_usage` | array | API request counts. Structure in §12. |
 | `srl_cron_last_run` | int | UTC timestamp of the last observed WP-Cron execution. §11.3. |
+
+And one more, autoload **yes**, because it is read on every request:
+
+| Option | Type | Purpose |
+|---|---|---|
+| `srl_db_version` | int | Schema version of the log table. Compared against `SRL_DB_VERSION` on `plugins_loaded`; see §5.2. Separate from `srl_settings['schema_version']`, which versions the settings array, not the table. |
 
 ### 3.1 Delay bounds
 
@@ -111,6 +119,11 @@ All keys are prefixed `_srl_` and are therefore protected meta, invisible in the
 | `_srl_last_error` | string | Human-readable reason, ≤ 500 characters. |
 | `_srl_image_omitted` | `'1'` / absent | Set when the post went out without its featured image (FR-4.4). |
 | `_srl_image_omitted_reason` | string | Why, ≤ 200 characters. Only meaningful when the above is set. |
+| `_srl_sending_since` | int | UTC timestamp written by the claim in §11.4. Without it the staleness rule in §10.2 cannot be implemented, because no other field answers "how long has this been in `sending`?" — `_srl_scheduled_at` is the schedule time, and "not before" semantics mean a post may sit in `scheduled` long past it. *(Review finding 4.)* |
+| `_srl_media_id` | string | Media id from a successful upload, reused across retries. |
+| `_srl_media_uploaded_at` | int | UTC timestamp of that upload. Media expires after 86400 s **[MEASURED]**, so a retry within the backoff window reuses the id rather than paying for a second upload. *(Review finding 22.)* |
+
+**MUST:** an absent `_srl_status` meta value is equivalent to `none`. Every guard treats "not set" and `'none'` identically. *(Review finding 2 noted the compare-and-swap in §11.4 quietly depended on this without it ever being stated.)*
 
 **MUST:** `_srl_status` is the single source of truth for INV-1. No other value, and no in-memory flag, may be consulted to decide whether a post has already been sent.
 
@@ -124,17 +137,26 @@ One custom table, `{$wpdb->prefix}srl_log`. Created on activation and on version
 CREATE TABLE {$wpdb->prefix}srl_log (
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   post_id bigint(20) unsigned NOT NULL DEFAULT 0,
+  post_title varchar(255) NOT NULL DEFAULT '',
   provider varchar(32) NOT NULL DEFAULT 'x',
-  event varchar(20) NOT NULL,
+  event varchar(32) NOT NULL,
   http_status smallint(5) unsigned DEFAULT NULL,
   remote_id varchar(64) DEFAULT NULL,
   message text DEFAULT NULL,
+  scheduled_at datetime DEFAULT NULL,
+  sent_at datetime DEFAULT NULL,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY post_id (post_id),
   KEY created_at (created_at)
 ) {$charset_collate};
 ```
+
+`{$charset_collate}` is `$wpdb->get_charset_collate()`. `dbDelta()` requires `require_once ABSPATH . 'wp-admin/includes/upgrade.php'`, which matters because the upgrade check in §5.2 can run on a front-end request where that file is not loaded.
+
+Three columns exist because of review finding 17. A log row must be **self-contained**: reading the title and times from current post meta at render time loses them for a deleted post, and shows a reposted post's *new* sent time against every historical row. `post_title` is a snapshot at write time, not a live lookup.
+
+`event varchar(32)`, not `varchar(20)`: review finding 13 caught that `credentials_unreadable` is 22 characters. On a strict-mode MySQL the insert would have been rejected; on a non-strict server it would have been silently truncated to a value matching no query — so the single audit record of the salt-rotation state was the one row that could not be stored.
 
 Notes that are requirements, not style:
 
@@ -143,6 +165,14 @@ Notes that are requirements, not style:
 - `event` is one of: `scheduled`, `sent`, `failed`, `cancelled`, `retry`, `test`, `credentials_unreadable`.
 - `message` is truncated to **2048 bytes** before insert, on a UTF-8 character boundary so the column never holds a split multi-byte sequence.
 - `post_id` is `0` for rows that are not about a post — the connectivity test (FR-1.5) and credential-state events.
+
+### 5.2 Schema versioning
+
+WordPress does **not** fire the activation hook when a plugin is updated in place, so "created on activation and on version upgrade" needs an explicit trigger. *(Review finding 19.)*
+
+On `plugins_loaded`, the plugin compares the `srl_db_version` option with the `SRL_DB_VERSION` constant. On a mismatch it loads `wp-admin/includes/upgrade.php`, runs `dbDelta()` with the current schema, and writes the new version. On a fresh install the option is absent and the same path runs.
+
+`SRL_DB_VERSION` is an integer, incremented whenever the DDL above changes. It is independent of the plugin version and of `srl_settings['schema_version']`, which versions the settings array.
 
 ### 5.1 Retention
 
@@ -173,7 +203,11 @@ Stored value is the ASCII string `srl1:` followed by base64 of:
 | 5 | 24 | Nonce, from `random_bytes( SODIUM_CRYPTO_SECRETBOX_NONCEBYTES )`. Fresh per encryption. |
 | 29 | n | Ciphertext from `sodium_crypto_secretbox()`, which includes its own authentication tag. |
 
-The fingerprint is a hash **of the derived key**, never of the plaintext secret and never of the salt. It reveals nothing about the credential and nothing usable about the key.
+The fingerprint is a hash **of the derived key**, never of the plaintext secret and never of the salt.
+
+It reveals nothing about the credential. It is a 32-bit check value on the derived key, which does let an attacker holding the database test a guessed salt cheaply, and does link two database backups that share a key. Since `wp_salt()` is high-entropy this is not a practical weakening, and it buys an accurate diagnosis of salt rotation — the trade ADR-003 accepts. *(The first draft claimed it revealed "nothing usable about the key", which review finding 28 correctly called overstated. An absolute claim inside a design whose selling point is honesty about its limits was worth one sentence to fix.)*
+
+To avoid it being a bare hash of the key, the fingerprint uses domain separation: `sodium_crypto_generichash( $key, 'srl-fingerprint', 32 )`, truncated to 4 bytes.
 
 ### 6.3 Decryption and the `credentials_unreadable` state
 
@@ -188,7 +222,8 @@ In `credentials_unreadable` the plugin **MUST**:
 - show a persistent admin notice, and the same message on the settings page, stating that the site's security salts appear to have changed and that re-entering the four keys will fix it;
 - **refuse to schedule new sends**, rather than scheduling sends guaranteed to fail hours later;
 - write one `credentials_unreadable` log row, not one per page load;
-- leave already-scheduled events in place. They will fail at send time and be recorded normally. Cancelling them would destroy information the owner needs.
+- leave already-scheduled events in place. They will fail at send time and be recorded normally. Cancelling them would destroy information the owner needs;
+- **mark each affected post.** A post whose publish transition is refused for this reason gets `_srl_status = failed` and `_srl_last_error = 'credentials_unreadable'`, and a `failed` log row. FR-2.3 renders a distinct status line naming the salt problem and linking to the settings page. *(Review finding 24: without this the post's status line reads "Not scheduled", identical to the master switch being off, and the one global log row is written once rather than per post — so a post skipped during the outage left no trace anywhere. The owner will look at the post, not the settings page, when they wonder a week later why three articles never went out.)*
 
 The message **MUST NOT** say "invalid credentials". The credentials in the X Console are fine. Saying otherwise sends the owner to the wrong place, which is the entire failure this mitigation exists to prevent.
 
@@ -228,10 +263,33 @@ The exact weights come from X's own `twitter-text` configuration, version 3, rea
 Reduced to the rules this plugin implements, with every weight divided by `scale`:
 
 - **Limit:** 280.
-- **Weight 1** for a Unicode code point in `U+0000–U+10FF`, `U+2000–U+200D`, `U+2010–U+201F`, or `U+2032–U+2037`. This covers Latin, Latin Extended, Greek, Cyrillic, Hebrew, Arabic, and common punctuation and spacing.
-- **Weight 2** for every other code point. This covers CJK, Hangul, Thai, Devanagari, and emoji.
-- **A URL always weighs 23**, whatever its real length, and whether it is `http` or `https`.
-- **`emojiParsingEnabled` is true**, which means an emoji *sequence* counts once. A ZWJ sequence such as a family emoji is many code points but weighs **2**, not 2 per code point. Counting its code points individually over-counts by a factor of six or more and truncates titles that would have fit.
+- **Weight 1** for a Unicode code point in `U+0000–U+10FF`, `U+2000–U+200D`, `U+2010–U+201F`, or `U+2032–U+2037`.
+- **Weight 2** for every other code point.
+- **Every URL weighs 23**, whatever its real length — not only the permalink. See §7.1.1.
+- **`emojiParsingEnabled` is true**, so an emoji *sequence* counts once. A ZWJ family emoji is seven code points and weighs **2**, not 14. Counting its code points individually over-counts by a factor of six and truncates titles that would have fit.
+
+**The numeric ranges above are normative. Script names are not.** The first draft glossed weight 2 as covering "CJK, Hangul, Thai, Devanagari, and emoji". Thai is U+0E00–U+0E7F and Devanagari is U+0900–U+097F — both sit inside the weight-1 range `0–4351` printed two lines above. An implementer coding the gloss rather than the numbers would have halved the usable title length for Thai and Hindi sites, and written a test asserting the wrong answer. *(Review finding 10.)* CJK, Hangul and emoji are correctly weight 2.
+
+#### 7.1.1 Every URL, not just the permalink
+
+`twitter-text` extracts **every** URL in the text and replaces each with 23, and its matcher fires on bare hostnames with a valid TLD, not only on `http(s)://` prefixes. The first draft weighted only the appended permalink as a URL and counted the title character by character, which under-counts:
+
+| Title contains | Plugin counted | X counts | Error |
+|---|---|---|---|
+| `WordPress.com` | 13 | 23 | **−10** |
+| `Why Notion.so beats Trello.com` | literal | +2 × 23 | **−20** |
+| a 90-character URL | 90 | 23 | +67 (harmless) |
+
+Under-counting is the fatal direction: the text passes the plugin's own ≤ 280 check and X returns HTTP 400. *(Review finding 8.)*
+
+**Specified:** `weighted_length()` first splits the **whole composed text** into URL and non-URL segments, then weighs each segment.
+
+- A scheme-qualified URL (`https?://…`) weighs exactly **23**. X definitely shortens these.
+- A bare `host.tld[/path]` candidate weighs **`max( 23, its literal weighted length )`**. If X linkifies it the cost is 23; if not, the cost is literal. Taking the larger can only truncate early, never overflow.
+- The TLD must be at least two letters, and the candidate must not be preceded by `@` or a word character. This keeps `i.e.` and `e.g.` out, which would otherwise each be charged 23.
+- Everything else is weighed code point by code point per §7.1.
+
+**MUST:** §16.6 asserts the counter against `twitter-text`'s own published weighted-length fixtures, not only against the plugin's own function. A test that measures the counter with the counter cannot catch a counting error.
 
 ### 7.2 The composition
 
@@ -258,9 +316,13 @@ The prefix and suffix are capped at 60 weighted characters each (§3). With both
 1. Compute the weighted length of the full composition.
 2. If it is ≤ 280, use it unchanged.
 3. Otherwise compute `title_budget = 256 - weighted(prefix) - weighted(suffix) - (joining spaces)`, then reduce further by 1 to reserve room for the ellipsis.
-4. Walk the title by grapheme cluster, accumulating weight, and stop at the last cluster that fits. Never split a grapheme cluster, an emoji sequence, or a multi-byte character.
+4. **NFC-normalize** the text. Then walk **code points**, applying the §7.1 ranges, except that a substring matching the emoji pattern counts as one unit of weight 2. Stop at the last position that fits. When cutting, never split a grapheme cluster, an emoji sequence, or a multi-byte character.
+
+   *The first draft said "walk by grapheme cluster" throughout, which is what `twitter-text` does not do. Grapheme clusters and emoji sequences are different sets, and the difference under-counts: `a` followed by five combining marks is one cluster, so the plugin charged 1 where X charges 6 — an under-count of 5 per occurrence, and therefore an HTTP 400. The same mechanism hits Vietnamese, Thai with tone marks, and Indic conjuncts at smaller magnitudes. Normalization is the step that makes the code-point rule deterministic, and the first draft never mentioned Unicode normalization at all. (Review finding 9.) The cluster rule was introduced to fix the ZWJ over-count and it does fix that; the fix belongs in emoji detection and in the cut position, not in the counting walk.*
+
+   Emoji detection is pinned rather than left to a Unicode property, because `\p{Extended_Pictographic}` is not compiled into every PCRE2 build (it is absent from PCRE2 10.39, which ships with Ubuntu 22.04). A multi-code-point cluster is treated as a single weight-2 emoji when it contains any of: U+200D (ZWJ), U+FE0F (VS16), a regional indicator U+1F1E6–U+1F1FF, a skin-tone modifier U+1F3FB–U+1F3FF, or U+20E3 (keycap). A single code point needs no special case: every emoji code point already falls outside the weight-1 ranges and so already weighs 2.
 5. Prefer a word boundary: if a space exists within the final 12 weighted characters of the truncation point, cut there instead, so the result does not end mid-word.
-6. Append `…` (U+2026, weight 1). Do not use three periods, which weigh 3.
+6. Append `…` (U+2026). **It weighs 2, not 1** — U+2026 sits in the gap between the weight-one ranges, which end at 8223 and resume at 8242, so it takes the default weight of 200. Reserve the ellipsis by *measuring* it, never by assuming; hard-coding a reserve of 1 overflows the limit by exactly one unit on every truncated post, which is a 100% failure rate on the longest titles. Three periods would weigh 3, so the single code point is still the right choice.
 
 **MUST:** the algorithm is conservative. If a code point's weight is uncertain, treat it as 2. Truncating one character early is invisible. Overflowing produces an HTTP 400 from X and a `failed` post, which is the failure this whole section exists to avoid.
 
@@ -282,7 +344,18 @@ OAuth 1.0a HMAC-SHA1, user context, per ADR-001. Every request carries an `Autho
 
 **MUST — the rule that breaks signers:** the request body is included in the signature base string **only** when the body is `application/x-www-form-urlencoded`. This plugin sends JSON and multipart bodies exclusively, so **no body parameter is ever signed**. Only the `oauth_*` parameters, plus any query-string parameters, enter the base string.
 
-The signer is verified against the worked example in RFC 5849 §3.4.1.1. That vector, and the reason X's own published example is not used, are recorded in `OPENQUESTIONS.md` under OQ-12.
+**MUST:** `multipart/form-data` is **not** `application/x-www-form-urlencoded`. Its parts are never signed. The phrasing above invites the opposite conclusion, so it is stated outright. *(Review finding 15.)*
+
+**The test vector, pinned here rather than referenced.** OQ-12 and brief §5 both require it, and the first draft only pointed at it. From RFC 5849 §3.4.1.1, with the duplicate `a3` parameter removed because an associative array cannot express a duplicate key and this plugin never sends one:
+
+```
+POST&http%3A%2F%2Fexample.com%2Frequest&a2%3Dr%2520b%26a3%3D2%2520q%26b5%3D%253D%2525
+3D%26c%2540%3D%26c2%3D%26oauth_consumer_key%3D9djdj82h48djs9d2%26oauth_nonce%3D7d8f3e4
+a%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D137131201%26oauth_token%3Dk
+kk9d7dh3k39sjv7
+```
+
+(Line-wrapped for the page; the value is a single unbroken string.) X's own published signing example could not be located in 2026 documentation, which is why the RFC vector is used — brief §5 names it as the fallback.
 
 Every media response carried `x-access-level: read-write` **[MEASURED]**. An App set to read-only will fail here, not at post time.
 
@@ -296,6 +369,10 @@ One-shot upload, per ADR-002 as amended. **MUST NOT** use the three-step `initia
 |---|---|
 | `media_category` | `tweet_image` |
 | `media` | the image bytes, with a filename and a correct `Content-Type` |
+
+**MUST — how the request is actually sent.** WordPress's HTTP API has **no** multipart file support. Passing an array as `body` to `wp_remote_post()` serializes it with `http_build_query()` and sets `Content-Type: application/x-www-form-urlencoded`, which would send mangled binary in a form-encoded body — rejected by X, and under §8.1's rule that body would then have to be *signed*, so the request would also fail to authenticate. *(Review finding 15: this is the one endpoint actually proven to work, and the transport detail that makes it work was unstated.)*
+
+Therefore: the multipart body is assembled **by hand** as a raw string with an explicitly generated boundary; `headers['Content-Type']` is set to `multipart/form-data; boundary=…`; and the body is passed to `wp_remote_post()` as a **string**, never an array.
 
 **Response, HTTP 200** **[MEASURED]**:
 
@@ -313,10 +390,14 @@ Requirements derived from this response:
 
 **Image preparation before upload** (FR-4.4):
 
-1. Resolve the featured image to a **local filesystem path** via `get_attached_file()`. **MUST NOT** fetch over HTTP; the site may be behind basic auth, a staging password, or a CDN.
-2. If the file is missing or unreadable, skip the image and set `_srl_image_omitted`.
-3. If the file exceeds **5 MB** **[DOC]**, or the pixel bounds pinned in §17 OPEN-2, downscale with `wp_get_image_editor()` into a temporary file. Delete the temporary file after the request, on success and on failure alike.
-4. If `wp_get_image_editor()` is unavailable, or downscaling fails, skip the image and set `_srl_image_omitted`.
+1. **MIME allowlist.** Accept `image/jpeg`, `image/png`, `image/webp` only. Anything else — including SVG, which many sites enable, and animated GIF, which needs a different `media_category` — is skipped with `_srl_image_omitted_reason = 'unsupported_type'`. GIF support is a deliberate v1 omission, not an oversight. *(Review finding 23: `media_category=tweet_image` was hard-coded for whatever the attachment happened to be.)*
+2. **Prefer the `large` intermediate, not the original.** Resolve via `wp_get_attachment_image_src( $id, 'large' )` and take its file, falling back to `get_attached_file()`. The original upload on a camera-sourced site is routinely 6–12 MB, which would make the downscale path the *normal* path; WordPress has already generated an intermediate under the limit. **MUST NOT** fetch over HTTP; the site may be behind basic auth, a staging password, or a CDN.
+3. If the file is missing or unreadable, skip the image and set `_srl_image_omitted`.
+4. **Bounded downscale.** If the file exceeds **5 MB** **[DOC]**, resize with `wp_get_image_editor()` to a maximum dimension of 2048 px, write to a temporary file, and re-check `filesize()`. If it still exceeds the limit, resize once more to 1200 px and re-check. Give up after two passes with `_srl_image_omitted_reason = 'too_large'`. *(The first draft said "downscale" with no target, no iteration and no re-check. `resize()` takes dimensions, not a byte budget, and `set_quality()` only affects JPEG, so a 6 MB PNG resized to 1200 px may still exceed 5 MB.)*
+5. Delete the temporary file after the request, on success and on failure alike.
+6. If `wp_get_image_editor()` is unavailable, or downscaling fails, skip the image and set `_srl_image_omitted`.
+
+**MUST:** these all degrade to "post without the image" per INV-6 — but ADR-002 exists because the owner asked for the featured image. Silently omitting it on most posts satisfies the letter of INV-6 and defeats its purpose, which is why steps 1, 2 and 4 are specified rather than left to the implementer.
 
 ### 8.3 Create the post — `POST /2/tweets`
 
@@ -358,25 +439,33 @@ Every request sets an explicit timeout: **15 seconds** for `POST /2/tweets`, **3
 
 ## 9. Error matrix
 
-Applies to every X API call. `attempts` is `_srl_attempts` **after** the current attempt is counted.
+Applies to the `POST /2/tweets` call. The media call has **no retry tier of its own** — see §9.5. `attempts` is `_srl_attempts` **after** the current attempt is counted.
+
+**One initial attempt plus up to three retries — four attempts in total.** *(Review finding 5: the first draft gated retries on `attempts < 3`, which yields 3 attempts and 2 retries and makes the 60-minute backoff unreachable, while §9.1, FR-4.8, T-451 and T-452 all encode the other reading. Brief FR-4.8 says "maximum 3 retries, then failed", so the tests and the brief agreed with each other and the matrix was the outlier.)*
 
 | Condition | Retry? | Resulting status | Notes |
 |---|---|---|---|
 | HTTP 200 / 201, body parses, `data.id` present | — | `sent` | Store `_srl_remote_id`, `_srl_sent_at`. |
-| HTTP 429 | yes, if `attempts < 3` | `scheduled`, else `failed` | Backoff §9.1. Honour `x-rate-limit-reset` if it is further out than the backoff. |
-| HTTP 500–599 | yes, if `attempts < 3` | `scheduled`, else `failed` | Backoff §9.1. |
-| Transport error or timeout (`WP_Error`) | yes, if `attempts < 3` | `scheduled`, else `failed` | **Not in the brief; specified here.** See §9.2. |
+| HTTP 429 | yes, if `attempts <= 3` | `scheduled`, else `failed` | Backoff §9.1. Honour `x-rate-limit-reset` if it is further out than the backoff. |
+| HTTP 500–599 | yes, if `attempts <= 3` | `scheduled`, else `failed` | Backoff §9.1. |
+| Transport error or timeout (`WP_Error`) | yes, if `attempts <= 3` | `scheduled`, else `failed` | **Not in the brief; specified here.** See §9.2. |
 | HTTP 401 | **no** | `failed` | Credentials or App permissions. Admin notice per FR-4.9. Log the body. |
 | HTTP 403 | **no** | `failed` | As 401. Commonly a read-only App. |
 | HTTP 400 with a duplicate-content error | **no** | `failed`, reason `duplicate` | FR-4.11. See §9.3. |
 | Any other HTTP 4xx | **no** | `failed` | Log the body. FR-4.10. |
 | HTTP 2xx, body does not parse as JSON, or `data.id` is absent | **no** | `failed`, reason `malformed_response` | **Deliberately not retried.** See §9.4. |
 
-The **media upload** call uses the same matrix with one difference: every terminal outcome sets `_srl_image_omitted` and continues to the post, per INV-6. A media failure never fails the send.
+### 9.5 The media call has no retry tier
+
+**Any** non-2xx status or transport error on `POST /2/media/upload` immediately sets `_srl_image_omitted` with the status or error as the reason, and proceeds to `POST /2/tweets`. Media outcomes never touch `_srl_attempts` and never change `_srl_status`.
+
+*(Review finding 6. The first draft said the media call "uses the same matrix with one difference". The matrix's non-terminal outcomes reschedule the whole send, so a 429 on the media endpoint meant either "delay the tweet by 5 minutes" or "omit the image and continue" — the document supported both and chose neither. Worse, `_srl_attempts` is one counter shared by both calls, so three media hiccups could exhaust the budget without `POST /2/tweets` ever being called, and the post would fail with an error about the image. That is the exact opposite of INV-6.)*
 
 ### 9.1 Backoff
 
-Retry delays are **5 minutes, 15 minutes, 60 minutes**, in that order, for attempts 1, 2 and 3. A retry is scheduled with `wp_schedule_single_event()` exactly as the original send was, and writes a `retry` log row. Maximum 3 retries, then `failed`.
+Retry delays are **5 minutes, 15 minutes, 60 minutes**, in that order, following failed attempts 1, 2 and 3. The fourth failure is terminal. A retry is scheduled with `wp_schedule_single_event()` exactly as the original send was — **and its return value is checked**, per §11.6 — and writes a `retry` log row.
+
+**A retry reuses an already-uploaded image.** If `_srl_media_id` is set and `_srl_media_uploaded_at` is less than 86400 seconds old **[MEASURED]**, the retry attaches the stored id instead of uploading again. Re-uploading would pay for the same image up to four times and would skew the media-to-post ratio in §12's counter — the one number the owner uses to decide whether the plugin's accounting can be trusted. *(Review finding 22.)*
 
 Because the delay is a WP-Cron schedule, these are also "not before" times (§11.1). A 5-minute backoff on a site with a one-minute system cron fires at 5 to 6 minutes.
 
@@ -393,6 +482,8 @@ This is a specification decision filling a genuine gap, not a reinterpretation. 
 X rejects a post whose text matches one posted recently. FR-4.11 treats this as terminal, which is right.
 
 It is also the backstop that makes retrying safe. A 5xx or a timeout may mean the post was actually created and only the response was lost. Retrying such a request risks a second post, which would break INV-1. X's duplicate rejection catches exactly that case.
+
+**An unverified dependency, stated rather than buried.** This argument rests on X's duplicate-detection window, whose duration is neither documented by X nor measured by the Phase 0 probe. Once the 60-minute backoff becomes reachable (§9.1), it is a long time to assume a duplicate check still applies; if the window is shorter than the backoff, a retry after a lost response produces a second post — an INV-1 violation arriving as a success rather than an error. This is the only place where the top invariant depends on external behaviour rather than on the plugin's own state. *(Review finding 26.)* **Phase 6 acceptance measures it**: post, delete, and repost identical text at 5, 30 and 90 minutes, then pin the result here. If the window proves shorter than 60 minutes, the backoff is capped at the measured window rather than at an invented number. Tracked as OPEN-11.
 
 **Specified:** when a duplicate error arrives on an attempt where `_srl_attempts > 0` — that is, on a retry rather than a first try — the plugin sets `failed` with reason `duplicate_on_retry`, and the admin notice says that the post **may already be on the timeline** and gives a link to check. Treating this identically to a first-attempt duplicate would tell the owner the post failed when it most likely succeeded.
 
@@ -421,8 +512,8 @@ Every row has at least one test in §16.
 
 | # | From | Trigger | To | Side effects |
 |---|---|---|---|---|
-| TR-1 | `none` | `transition_post_status` to `publish`, from a status that is not `publish`, with per-post and master switches on | `scheduled` | Write `_srl_scheduled_at`, schedule one event, log `scheduled`. |
-| TR-2 | `none` | Same transition, but a switch is off, or the post type is not enabled | `none` | Nothing scheduled, nothing logged. |
+| TR-1 | `none`, `cancelled`, `failed` | `transition_post_status` to `publish`, from a status that is not `publish`, passing every guard in §10.3 | `scheduled` | Write `_srl_scheduled_at`, schedule one event (checking its return, §11.6), log `scheduled`. |
+| TR-2 | any | Same transition, but a guard in §10.3 rejects it | unchanged | Nothing scheduled. A skip with a cost implication is logged; an ordinary "switch is off" is not. |
 | TR-3 | `scheduled` | Post leaves `publish`, is trashed, or is deleted | `cancelled` | Clear the scheduled event, log `cancelled`. |
 | TR-4 | `scheduled` | Owner clicks "Cancel scheduled post" | `cancelled` | Clear the event, log `cancelled`. |
 | TR-5 | `scheduled` | Cron event fires, post still `publish` | `sending` | Compare-and-swap per §11.4. |
@@ -432,6 +523,39 @@ Every row has at least one test in §16.
 | TR-9 | `sending` | Terminal failure, or `attempts = 3` | `failed` | Store `_srl_last_error`, log `failed`, raise notice. |
 | TR-10 | `sent` or `failed` | "Repost now", confirmed | `scheduled` | Reset `_srl_attempts` to 0, schedule at delay 0, log `scheduled`. |
 | TR-11 | any | A second cron event fires for a post not in `scheduled` | unchanged | Exit without an API call. INV-1. Log nothing. |
+| TR-12 | `sending` | `_srl_sending_since` is more than 15 minutes old, observed by the scan in §11.7 | `failed` | `_srl_last_error = 'stalled'`, log `failed`, raise notice. **No automatic retry.** |
+| TR-13 | `sent` | A publish transition fires again (unpublish-republish, private-republish, untrash) | `sent` | **No-op.** Nothing scheduled. The meta box explains why, and offers "Repost now" as the only path. |
+| TR-14 | `sending` | Post is trashed or unpublished while a send is in flight | `sending` → resolved by TR-7/TR-9 | Mark the intent; **do not** clear the in-flight attempt and do not attempt to unsend. The send completes or fails on its own, and the result is recorded. |
+| TR-15 | `scheduled` | `wp_schedule_single_event()` returned `false`, or the event is later found missing | `failed` | `_srl_last_error = 'schedule_failed'` or `'event_lost'`, log `failed`, raise notice. §11.6. |
+
+### 10.3 Scheduling guards
+
+Every one of these must pass before TR-1 fires. The first draft had only the first four, which is what made review findings 2 and 7 possible.
+
+| # | Guard | Why |
+|---|---|---|
+| G-1 | `$new_status === 'publish' && $old_status !== 'publish'` | Brief §1.5. Excludes edits to published posts. |
+| G-2 | Not an autosave or a revision | Revisions and autosaves carry status `inherit`, so G-1 already excludes them; this is belt and braces. |
+| G-3 | Post type is in `srl_post_types` | Brief §3. Ships as `post` only. |
+| G-4 | Master switch on, and per-post switch on (read per §11.5) | FR-1.3, FR-2.1. |
+| G-5 | **`_srl_status` is `none`, absent, `cancelled`, or `failed`** | **INV-1.** Never when it is `sent`, `sending`, or `scheduled`. |
+| G-6 | **Not `defined( 'WP_IMPORTING' ) && WP_IMPORTING`** | An importer must not spend the owner's money. |
+| G-7 | **Not a bulk edit** (`isset( $_REQUEST['bulk_edit'] )`) without deliberate opt-in | Bulk-publishing 40 drafts fires 40 transitions in one request, and the meta box is not rendered in bulk edit. |
+| G-8 | **`post_date_gmt` is within the freshness window** (default 24 hours) | "Newly published" in brief §1.5 means new, not merely newly-transitioned. |
+| G-9 | Credentials are readable (§6.3) | Otherwise the send is certain to fail hours later. |
+
+**Why G-5 exists (review finding 2, blocker).** The only stated guard was G-1 plus the switches. Nothing consulted `_srl_status`, and TR-1's "From: `none`" was a description, not a rule. Every one of these is ordinary editorial behaviour and every one produced a duplicate paid post:
+
+- publish → draft (`cancelled`) → publish again.
+- publish → trash → untrash. `wp_untrash_post()` restores to draft by default and to `publish` when the `wp_untrash_post_set_previous_status` filter is used, which many sites and plugins do.
+- Already `sent`, then publish → private → publish, or publish → future → publish when an editor reschedules a live post. **The post goes to X a second time**, without the confirmation click FR-2.5 makes the sole path to a second post.
+- A post duplicated by a clone plugin inherits `_srl_status = sent` and `_srl_remote_id`, so the meta box shows "Sent" linking to the *original's* X post.
+
+X's duplicate rejection does **not** save these cases, because the title is usually corrected in between, so the text differs.
+
+**Why G-6, G-7 and G-8 exist (review finding 7, major).** `transition_post_status` fires identically for bulk edit, Quick Edit, `wp_insert_post()` from an importer or migration or WP-CLI or the REST API. A 500-post migration into a site with the plugin enabled schedules 500 sends of posts dated years ago — **$100 at the URL rate**, plus a flood of near-simultaneous events that collide with X's rate limits and cascade into 429 retries. This is the only failure mode in the document that costs real money with no human intending a post.
+
+**MUST:** a skip under G-6, G-7 or G-8 writes a `cancelled` log row with the guard name as the reason. A skip under G-4 does not, because "the switch is off" is the normal state of a disabled plugin and would fill the log. The distinction is that G-6 to G-8 skips are *surprising* and the owner must be able to find out why nothing posted.
 
 ### 10.2 The `sending` state is a lock, not a label
 
@@ -455,7 +579,11 @@ The plugin schedules with `wp_schedule_single_event( $timestamp, 'srl_send_post'
 
 The event carries **only the post id**. It never carries the title, the permalink, the delay, or credentials. Everything else is read at send time, which is what makes FR-4.3 work and what keeps the cron array small.
 
-**MUST:** `wp_clear_scheduled_hook( 'srl_send_post', array( $post_id ) )` is called with the identical argument array used to schedule. WordPress matches events by hook **and** arguments; a mismatch silently clears nothing, and TR-3 would then leave a live event behind that fires against a trashed post.
+**MUST:** the argument array is **always** `array( (int) $post_id )`, at every schedule site and every clear site, without exception.
+
+WordPress matches events by `md5( serialize( $args ) )`, which is **type-sensitive**: `array( 123 )` and `array( '123' )` hash differently. Scheduling takes the id from `$post->ID` (always an int); clearing takes it from `$_POST` or `$_GET` in the cancel handler, or from a hook argument that has often passed through `sanitize_text_field()` on the way, yielding a string. A single missing cast leaves a live event behind while the meta says `cancelled`, and that stale event then silently swallows the next schedule through WordPress's 10-minute duplicate window (§11.6). *(Review finding 16: the first draft warned about the argument array's shape and stopped one level above the mechanism that actually bites.)*
+
+**MUST:** all scheduling and clearing goes through one pair of helper methods that perform the cast, so no call site can get it wrong independently. T-323 schedules with an int and attempts to clear with the string form, asserting the helper normalizes before calling WordPress.
 
 ### 11.3 Cron health
 
@@ -463,13 +591,17 @@ A recurring event `srl_heartbeat` runs on a custom one-minute schedule, register
 
 **Why a heartbeat rather than recording the time of the incoming request:** the health panel must answer "is WP-Cron executing?", not "did something request `wp-cron.php`?". Those differ precisely in the case that matters. If a caching layer serves `wp-cron.php` from cache, requests succeed, nothing executes, and a request-time metric would show green while every scheduled post silently stalls. A heartbeat can only be written by code that actually ran.
 
-Panel states:
+**The observer effect, and why `DISABLE_WP_CRON` is part of the reading.** On a site that has *not* set `DISABLE_WP_CRON` — precisely the misconfigured population this panel exists to detect — loading any wp-admin page calls `wp_cron()`, which spawns a loopback request that runs due events including `srl_heartbeat`. The owner opens the settings page, sees a warning, refreshes, and sees green, because their own page load caused the heartbeat. Their delayed posts still stall for hours between visitors, which is the actual condition, and the panel now denies it. A metric a refresh can turn green teaches the owner to distrust it. *(Review finding 20.)*
+
+Panel states — three, not two:
 
 | Condition | Display |
 |---|---|
-| `srl_cron_last_run` is within the staleness threshold | Green. Show the timestamp. |
-| Older than the threshold | Warning, with a link to `INSTALLATION.md` step 7. |
-| Never set | Warning: cron has not run since the plugin was activated. |
+| `DISABLE_WP_CRON` is true **and** the heartbeat is within the threshold | **Green.** Real cron is running. Show the timestamp. |
+| `DISABLE_WP_CRON` is false, whatever the heartbeat says | **Unverified.** "WP-Cron is visitor-triggered, so delays will be approximate." Link to `INSTALLATION.md` step 7. Never green, because the freshness reading cannot be trusted. |
+| `DISABLE_WP_CRON` is true and the heartbeat is stale or never set | **Warning.** Real cron is configured but is not running. |
+
+**Stated cost.** The heartbeat is roughly 1,440 option writes per day, forever, on whatever host the site runs. That is defensible for a diagnostic that cannot otherwise be obtained, but it is a real cost and is recorded here rather than discovered later.
 
 **Threshold: 5 minutes**, per FR-1.6. **[OPEN — OQ-18]** This assumes Hostinger's cron can run every minute. If the host's minimum interval turns out to be 5 minutes, the threshold sits exactly on the boundary and will produce false warnings; it then becomes 3× the actual interval. The threshold **MUST** therefore be a single named constant, not a literal scattered through the panel code.
 
@@ -492,12 +624,67 @@ $claimed = $wpdb->query(
 );
 ```
 
-- `$claimed === 1` means this process owns the send. Proceed.
-- `$claimed === 0` means another process claimed it first, or the status was not `scheduled`. **Exit immediately, make no API call, log nothing.**
+The result has **three** meanings, not two. The first draft collapsed them into "exit, log nothing", which turned a transient database error into a permanently stuck post with no evidence anywhere. *(Review finding 18.)*
+
+| Result | Meaning | Action |
+|---|---|---|
+| `1` | This process owns the send. | Write `_srl_sending_since = time()`. Proceed. |
+| `0` | Either another worker claimed it first, or the status was not `scheduled`. | Re-read with `get_post_meta()`. If it is now `sending`, another worker has it: exit silently. Otherwise log the observed status and exit. |
+| `false` | **The query errored** — deadlock, lock timeout, lost connection. `false === 1` is false, so the first draft abandoned the send with no log row, no status change and no retry, leaving the post in `scheduled` forever. | Log a `failed` row carrying `$wpdb->last_error`, and **leave the status as `scheduled`** so the reconciliation pass in §11.6 picks it up. |
+| `>= 2` | Duplicate `_srl_status` meta rows, possible after a plugin-driven duplication or an import. | Log and abort. This is a data defect the owner must see, not something to paper over. |
+
+**MUST:** the check is `1 === $claimed`, using a strict comparison. `$claimed == 1` is true for `true` and for `'1'`, and loose comparison is what made the `false` case invisible in the first place.
 
 After a successful claim, `wp_cache_delete( $post_id, 'post_meta' )` clears the object cache, which the direct UPDATE bypassed. Omitting this leaves stale meta in a persistent object cache for the rest of the request.
 
 This is the one place where a direct `$wpdb->query()` is correct rather than a violation of INV-4 — and it is still fully prepared, so INV-4 holds as written.
+
+### 11.5 The meta box save path
+
+**This is where the first draft was most wrong.** *(Review finding 1, blocker.)*
+
+In `wp_insert_post()`, `wp_transition_post_status()` runs **before** `do_action( 'save_post' )`. Meta boxes save on `save_post`. So at the moment the scheduler runs, `_srl_enabled` and `_srl_delay_override` still hold the values from before this request, or do not exist at all for a post being published for the first time. Unchecking "Post to X" and pressing Publish in the same request therefore did **not** prevent scheduling, and a delay override typed in the same request was ignored.
+
+In the block editor the gap is wider. The publish transition happens inside the REST request to `/wp/v2/posts/{id}`, while a classic meta box's fields are submitted afterwards in a *separate* `post.php?meta-box-loader=1` request. Brief §3 rules out a Gutenberg sidebar panel because "a classic meta box… works in both editors" — true for display, false for this ordering.
+
+The consequence: the owner unchecks the box, publishes, and the post goes to X anyway at $0.20. This is the one control the brief gives the author to prevent an unwanted paid post.
+
+**Specified, in three parts:**
+
+1. **Save.** The meta box fields are saved on `save_post`, with nonce verification and an `edit_post` capability check for that specific post id.
+2. **Read-through at schedule time.** The `transition_post_status` handler, when the meta box nonce is present and valid in `$_POST`, reads `_srl_enabled` and `_srl_delay_override` **from `$_POST`** rather than from stored meta. When the nonce is absent — a REST publish, WP-CLI, a bulk edit — it falls back to stored meta.
+3. **Re-check at send time.** The publisher re-reads `_srl_enabled` immediately before sending and cancels (TR-3) if it is now `'0'`. This closes the block editor's separate-request case: the delay guarantees the meta has landed long before the send.
+
+**MUST:** T-201 and T-211 drive the real request path — `wp_insert_post()` with `$_POST` populated and the nonce set — not pre-seeded meta. A test that seeds meta and then transitions the post passes against the broken design, which is exactly what the first draft's tests would have done.
+
+### 11.6 Scheduling can fail, and the failure must be caught
+
+`wp_schedule_single_event()` returns `false` in at least four situations. The first draft treated every scheduling site as a statement whose result did not matter. *(Review finding 3, blocker.)*
+
+- An identical hook-and-args event is already due within **10 minutes** of the requested timestamp — WordPress's built-in duplicate suppression. This is not theoretical: TR-10 ("Repost now", delay 0) and TR-8 (5-minute backoff) both re-schedule the same hook with the same args, so any residual event for that post id silently swallows the new schedule.
+- The `pre_schedule_event` filter short-circuits — what host-level cron replacements and cron-control plugins use.
+- The `schedule_event` filter returns a falsey event.
+- The `cron` option write fails.
+
+Meanwhile FR-3.3 requires `_srl_status = scheduled` and `_srl_scheduled_at` to be written in the same request. If the schedule call failed and the meta write succeeded, the post sits permanently in `scheduled`, the meta box says "Scheduled for {time}", and **no event exists**. Nothing would ever move it: §10.2's staleness rule watches only `sending`.
+
+**MUST:**
+
+1. The return value of `wp_schedule_single_event()` is checked at **every** call site. On `false`: set `_srl_status = failed` with `_srl_last_error = 'schedule_failed'`, write a `failed` log row, raise the FR-5.2 notice (TR-15).
+2. **Reconciliation.** The `srl_heartbeat` handler (§11.7) also looks for posts in `scheduled` whose `_srl_scheduled_at` is more than one hour past and for which `wp_next_scheduled( 'srl_send_post', array( (int) $post_id ) )` is `false`. Those move to `failed` with reason `event_lost` (TR-15). This is the safety net for the cases where the schedule call returned `true` and the event later vanished — a `cron` option overwritten by another process, a migration, a manual cron flush.
+
+The project's goal is "no duplicate posts and **no silent failures**", and INV-5 says a failure is always recorded. Without this, a post reads "Scheduled" forever with no upper time bound.
+
+### 11.7 The reconciliation scan
+
+One scan, in the `srl_heartbeat` handler, doing three things. The daily prune is too slow for a 15-minute staleness rule, and `admin_init` only runs when someone is looking — which is the wrong trigger for a condition whose whole point is that nobody is looking.
+
+| Check | Condition | Action |
+|---|---|---|
+| Stalled send | `_srl_status = 'sending'` and `_srl_sending_since` older than 15 min | TR-12: `failed`, reason `stalled`. |
+| Lost event | `_srl_status = 'scheduled'`, `_srl_scheduled_at` more than 1 h past, and `wp_next_scheduled()` is false | TR-15: `failed`, reason `event_lost`. |
+
+**The query is pinned, because an unindexed scan every minute is a real cost.** The scan uses `WP_Query` with `post_status => 'any'`, `posts_per_page => 20`, `no_found_rows => true`, `fields => 'ids'`, and a `meta_query` on `_srl_status IN ('sending','scheduled')`. WordPress indexes `postmeta.meta_key`, so this is an index scan over a small set, not a table scan; the plugin only ever has a handful of posts in those two states. The 20-row bound means a pathological backlog is worked through over successive minutes rather than in one request.
 
 ---
 
@@ -537,12 +724,18 @@ Each requirement lists its acceptance criteria. The test column names the tests 
 | FR-1.2 | Default delay, with unit selector, 0–72 hours, default 60 minutes | A value resolving above 259200 seconds is rejected with a field error; a fresh install reads 60 minutes | T-110, T-111 |
 | FR-1.3 | Master switch, default off | A freshly activated, unconfigured plugin schedules nothing on publish | T-112 |
 | FR-1.4 | Optional prefix and suffix, ≤ 60 characters each | 61 weighted characters is rejected; 60 is accepted; weighting per §7 | T-113 |
-| FR-1.5 | "Send test post" button, URL-free, shows the raw response | Posts a fixed string containing no URL; renders the response body verbatim; writes a `test` log row with `post_id = 0` | T-120, T-121 |
+| FR-1.5 | "Send test post" button, URL-free, shows the response | Posts a **timestamped** string containing no URL; renders the response body unmodified in content inside `<pre><code>`, passed through `esc_html()`; writes a `test` log row with `post_id = 0` | T-120, T-121, T-122 |
 | FR-1.6 | Cron health panel | Green within the threshold, warning beyond it, warning when never set (§11.3) | T-130, T-131, T-132 |
 | FR-1.7 | Usage counter for the current calendar month, by endpoint | Reflects every call including failures (§12) | T-140, T-141 |
-| FR-1.8 | Log of the last 50 attempts | Shows post title, scheduled time, sent time, result, and the X post id or the error; ordered newest first | T-150 |
+| FR-1.8 | Log of the last 50 rows, newest first, filterable to attempt events (`sent`, `failed`, `retry`) | Each row is self-contained: `post_title`, `scheduled_at`, `sent_at`, `event`, `http_status`, and `remote_id` or the message, all read from the log row itself | T-150, T-151, T-152 |
 
-**FR-1.5 note.** The test post is published to the timeline and bills at the URL-free rate of $0.015. The settings page states both facts beside the button, because a button labelled "test" that costs money and posts publicly must say so before it is clicked.
+**FR-1.5 notes.**
+
+The test post is published to the timeline and bills at the URL-free rate of $0.015. The settings page states both facts beside the button, because a button labelled "test" that costs money and posts publicly must say so before it is clicked.
+
+**The string is timestamped, not fixed.** *(Review finding 21.)* Brief FR-1.5 says "a fixed test string", and §9.3 says — correctly, as a load-bearing part of the INV-1 argument — that X rejects a post whose text matches one posted recently. The two are individually right and jointly wrong: the second press of the button returns a duplicate error and reports a failed connectivity check. Since this is the owner's only credential check, and the mechanism OPEN-5 relies on to settle `/2/tweets` versus `/2/posts`, a false failure sends them to regenerate keys that were fine. The text is therefore `Social Relay connectivity test {YYYY-MM-DD HH:MM} UTC` — still URL-free, still cheap, and different on every press. This is a deviation from a brief FR and is listed in §17 as OPEN-12.
+
+**"Verbatim" never means unescaped.** The first draft's acceptance said "renders the response body verbatim", which contradicts SEC-6 and SEC-9 and is a reflected XSS in a `manage_options` screen — the highest-value XSS target a plugin has. An upstream error body is attacker-influenceable in the general case: a hijacked DNS answer, a captive portal, a proxy interception page. *(Review finding 12.)* Throughout this document, "raw" and "verbatim" mean **unmodified text**, never unescaped markup.
 
 ### FR-2 Per-post control — meta box
 
@@ -602,8 +795,8 @@ Implements brief §8. Each is testable, and each has a test in §16.
 - **SEC-2** No secret is ever rendered into an input value or any HTML attribute. **T-601.**
 - **SEC-3** Every form and every AJAX action carries a nonce, verified before any state change. **T-610.**
 - **SEC-4** Settings require `manage_options`. Meta box actions require `edit_post` for that specific post id. **T-611, T-612.**
-- **SEC-5** Every query is prepared. A build-time check greps for `$wpdb->query(` with an interpolated variable and fails the build. **T-620.**
-- **SEC-6** Every input is sanitized; every output is escaped with `esc_html`, `esc_attr`, or `esc_url` as appropriate. **T-621.**
+- **SEC-5** Every query is prepared, per INV-4. **The primary control is PHPCS's `WordPress.DB.PreparedSQL` and `WordPress.DB.PreparedSQLPlaceholders` sniffs**, which run in CI and block the merge. A grep is the backstop, and its rule is stated exactly rather than described: flag any `$wpdb->query(`, `get_results(`, `get_var(`, `get_row(` whose first argument is a string literal containing `$`, **other than** `$wpdb->prefix`, `$wpdb->postmeta` and `$wpdb->posts`. *(Review finding 11: the first draft's grep would have failed the build on §11.4's own mandatory compare-and-swap and on every log query, and a security control that must be weakened on day one to let the build pass is a control nobody trusts by Phase 5.)* **Static check S-1.**
+- **SEC-6** Every input is sanitized; every output is escaped with `esc_html`, `esc_attr`, or `esc_url` as appropriate. Enforced by PHPCS's `WordPress.Security.EscapeOutput` sniff, not by a runtime test — escaping is a static property of source code and cannot be asserted at run time. **Static check S-2.** Where this document says a value is shown "raw" or "verbatim", it means unmodified **text**, escaped for output; no HTML from any API response is ever interpreted.
 - **SEC-7** Outbound requests go to `api.x.com` only. A test asserts that no other host is ever requested, by intercepting `pre_http_request` and failing on any other host. **T-622.**
 - **SEC-8** `uninstall.php` removes the options, all `_srl_*` post meta, the log table, and every scheduled event. **T-630.**
 - **SEC-9** A response body written to the log is truncated to 2048 bytes and is never trusted as HTML. **T-623.**
@@ -616,13 +809,21 @@ Implements brief §8. Each is testable, and each has a test in §16.
 
 ### 15.1 Actions the plugin registers
 
-| Hook | Purpose |
-|---|---|
-| `transition_post_status` | Scheduling entry point (FR-3.1). |
-| `srl_send_post` | The single scheduled event. One argument: post id. |
-| `srl_heartbeat` | One-minute recurring cron health beat (§11.3). |
-| `srl_prune_log` | Daily log and usage pruning (§5.1, §12). |
-| `wp_trash_post`, `before_delete_post` | Cancellation (FR-3.4). |
+*(Review finding 29: the first draft gave names only. Priorities and argument counts decide correctness here, and unstated details get implemented three different ways across three sessions.)*
+
+| Hook | Callback signature | Priority | `accepted_args` | Purpose |
+|---|---|---|---|---|
+| `transition_post_status` | `( string $new_status, string $old_status, WP_Post $post )` | 10 | **3** | Serves **both** TR-1 (publish → schedule) **and** TR-3 (leaving `publish` → cancel). |
+| `save_post` | `( int $post_id, WP_Post $post, bool $update )` | 10 | 3 | Meta box fields (§11.5). Nonce and `edit_post` checked first. |
+| `srl_send_post` | `( int $post_id )` | 10 | 1 | The single scheduled send. |
+| `srl_heartbeat` | `()` | 10 | 0 | Cron health beat plus the reconciliation scan (§11.3, §11.7). |
+| `srl_prune_log` | `()` | 10 | 0 | Daily log and usage pruning (§5.1, §12). |
+| `before_delete_post` | `( int $post_id, WP_Post $post )` | 10 | 2 | Clears the event on permanent deletion. **MUST** guard on post type and skip revisions: this fires for every post type and for every revision deleted during ordinary editing. |
+| `cron_schedules` | `( array $schedules )` | 10 | 1 | Registers the one-minute schedule. |
+
+**MUST — the argument order.** `transition_post_status` passes `( $new_status, $old_status, $post )`. Reversing the first two produces a plugin that fires on *un*publish and never on publish. No listed test would obviously catch it: T-303 (`publish_to_publish_schedules_nothing`) passes under the reversed reading too. T-300 through T-302 are what catch it, and only because they assert a schedule was created.
+
+**`wp_trash_post` is deliberately not used.** It fires *before* the status changes, and trashing already fires `transition_post_status` with `publish → trash`, which the same handler catches for the unpublish case. Registering both would double-handle. *(The first draft listed `wp_trash_post` and assigned `transition_post_status` only to "Scheduling entry point", so the hook that actually handles unpublish was never named.)*
 
 ### 15.2 Filters the plugin provides
 
@@ -676,6 +877,8 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-113 `test_prefix_and_suffix_reject_61_weighted_characters` | FR-1.4 |
 | T-120 `test_test_post_contains_no_url` | FR-1.5 |
 | T-121 `test_test_post_writes_log_row_with_post_id_zero` | FR-1.5, FR-5.1 |
+| T-122 `test_test_post_text_differs_between_invocations` | FR-1.5, review finding 21 |
+| T-108 `test_credentials_unreadable_marks_affected_post_failed` | §6.3, review finding 24 |
 | T-130 `test_cron_health_green_within_threshold` | FR-1.6 |
 | T-131 `test_cron_health_warns_beyond_threshold` | FR-1.6 |
 | T-132 `test_cron_health_warns_when_never_run` | FR-1.6 |
@@ -683,6 +886,9 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-140 `test_usage_counter_increments_on_success` | FR-1.7 |
 | T-141 `test_usage_counter_increments_on_failure` | FR-1.7, FR-4.12 |
 | T-150 `test_log_panel_returns_last_50_newest_first` | FR-1.8 |
+| T-151 `test_log_row_is_self_contained_after_post_deletion` | FR-1.8, review finding 17 |
+| T-152 `test_every_event_value_round_trips_through_the_column` | §5, review finding 13 |
+| T-153 `test_dbdelta_upgrade_from_version_1_preserves_rows` | §5.2, review finding 19 |
 
 ### 16.3 Meta box
 
@@ -711,6 +917,16 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-305 `test_disabled_post_type_schedules_nothing` | FR-3.1, TR-2 |
 | T-310 `test_zero_delay_still_goes_through_scheduler` | FR-3.2, INV-2 |
 | T-311 `test_status_and_scheduled_at_written_in_same_request` | FR-3.3 |
+| T-306 `test_republish_after_cancel_schedules_again` | G-5, TR-1 |
+| T-307 `test_republish_after_sent_is_a_no_op` | G-5, TR-13, INV-1 |
+| T-308 `test_untrash_then_publish_does_not_resend` | G-5, TR-13, INV-1 |
+| T-309 `test_wp_importing_is_skipped_and_logged` | G-6 |
+| T-312 `test_bulk_edit_is_skipped_and_logged` | G-7 |
+| T-313 `test_post_older_than_freshness_window_is_skipped` | G-8 |
+| T-314 `test_unchecked_box_in_same_request_prevents_scheduling` | §11.5, FR-2.1 |
+| T-315 `test_delay_override_in_same_request_is_used` | §11.5, FR-2.2 |
+| T-316 `test_schedule_failure_sets_failed_not_scheduled` | §11.6, TR-15 |
+| T-317 `test_lost_event_is_reconciled_to_failed` | §11.6, TR-15, INV-7 |
 | T-320 `test_unpublish_clears_event_and_cancels` | FR-3.4, TR-3 |
 | T-321 `test_trash_clears_event_and_cancels` | FR-3.4, TR-3 |
 | T-322 `test_delete_clears_event_and_cancels` | FR-3.4, TR-3 |
@@ -724,7 +940,15 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-401 `test_event_on_unpublished_post_cancels_without_api_call` | FR-4.1, TR-6 |
 | T-402 `test_claim_is_compare_and_swap_and_second_claim_returns_zero` | FR-4.2, TR-5, §11.4 |
 | T-403 `test_title_edited_during_delay_is_used_at_send_time` | FR-4.3 |
-| T-404 `test_post_stalled_in_sending_becomes_failed_not_retried` | §10.2 |
+| T-404 `test_post_stalled_in_sending_becomes_failed_not_retried` | §10.2, TR-12 |
+| T-405 `test_claim_returning_false_logs_and_leaves_status_scheduled` | §11.4, review finding 18 |
+| T-406 `test_duplicate_status_meta_aborts_and_logs` | §11.4, review finding 18 |
+| T-407 `test_enabled_flag_rechecked_at_send_time` | §11.5 |
+| T-408 `test_trashed_during_send_does_not_double_handle` | TR-14 |
+| T-417 `test_media_failure_does_not_consume_retry_budget` | §9.5, INV-6, review finding 6 |
+| T-418 `test_retry_reuses_media_id_within_expiry` | §9.1, review finding 22 |
+| T-419 `test_unsupported_mime_is_skipped_with_reason` | §8.2, review finding 23 |
+| T-429 `test_multipart_body_is_a_string_not_an_array` | §8.2, review finding 15 |
 | T-410 `test_featured_image_is_read_from_filesystem_not_http` | FR-4.4 |
 | T-411 `test_media_failure_still_publishes_text_post` | FR-4.4, INV-6 |
 | T-412 `test_media_failure_sets_image_omitted_with_reason` | FR-4.4 |
@@ -745,6 +969,14 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-425 `test_url_is_never_truncated` | FR-4.5 |
 | T-426 `test_truncation_never_splits_a_grapheme_cluster` | §7.4 |
 | T-427 `test_result_never_exceeds_280_weighted_at_maximum_prefix_and_suffix` | §7.3 |
+| T-433 `test_url_inside_the_title_is_weighed_as_23` | §7.1.1, review finding 8 |
+| T-434 `test_bare_domain_in_title_is_weighed_conservatively` | §7.1.1 |
+| T-435 `test_abbreviations_are_not_treated_as_domains` | §7.1.1 |
+| T-436 `test_combining_marks_are_counted_per_codepoint_after_nfc` | §7.4, review finding 9 |
+| T-437 `test_counter_matches_twitter_text_published_fixtures` | §7.1.1 |
+| T-438 `test_thai_and_devanagari_weigh_one` | §7.1, review finding 10 |
+| T-439 `test_adjacent_zwj_emoji_are_not_merged` | §7.4 — PCRE2's `\X` merges them, a 278-unit under-count |
+| T-440b `test_invalid_url_host_is_weighed_literally_not_as_23` | §7.1.1 — X does not shorten an over-long host |
 | T-428 `test_empty_prefix_and_suffix_produce_no_double_spaces` | §7.2 |
 
 ### 16.7 Error handling
@@ -755,7 +987,7 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-431 `test_media_key_absent_entirely_when_no_image` | FR-4.6, §8.3 |
 | T-440 `test_success_stores_id_status_sent_at_and_log_row` | FR-4.7, TR-7 |
 | T-450 `test_429_retries_with_five_minute_backoff` | FR-4.8, TR-8 |
-| T-451 `test_500_retries_then_fails_on_fourth_attempt` | FR-4.8, TR-9 |
+| T-451 `test_500_retries_three_times_then_fails_on_fourth_attempt` | FR-4.8, TR-9 |
 | T-452 `test_backoff_sequence_is_5_15_60_minutes` | §9.1 |
 | T-453 `test_transport_error_is_retried_like_a_5xx` | §9.2 |
 | T-454 `test_transport_error_logs_null_http_status` | §9.2 |
@@ -772,7 +1004,7 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | Test | Covers |
 |---|---|
 | T-500 `test_log_row_written_for_each_event_type` | FR-5.1 |
-| T-501 `test_no_error_log_writes_in_normal_operation` | FR-5.1 |
+| T-501 `test_plugin_source_contains_no_unguarded_error_log_call` | FR-5.1, static check S-3 |
 | T-502 `test_log_message_truncated_to_2048_bytes_on_char_boundary` | §5, SEC-9 |
 | T-510 `test_one_dismissible_notice_per_failed_post` | FR-5.2 |
 | T-511 `test_notice_dismissal_persists` | FR-5.2 |
@@ -783,21 +1015,60 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-610 `test_missing_nonce_rejects_every_state_change` | SEC-3 |
 | T-611 `test_settings_require_manage_options` | SEC-4 |
 | T-612 `test_meta_box_actions_require_edit_post_for_that_post` | SEC-4 |
-| T-620 `test_no_unprepared_wpdb_query_in_source` | SEC-5 |
-| T-621 `test_all_output_is_escaped` | SEC-6 |
+| T-624 `test_event_column_accepts_credentials_unreadable` | SEC-9, review finding 13 |
 | T-622 `test_no_request_to_any_host_other_than_api_x_com` | SEC-7, INV-3 |
 | T-623 `test_logged_body_is_truncated_and_not_trusted_as_html` | SEC-9 |
 | T-630 `test_uninstall_removes_options_meta_table_and_events` | SEC-8 |
 
-### 16.9 Coverage assertion
+### 16.9 Signer tests
 
-Every FR in §13 and every transition TR-1..TR-11 in §10.1 is named above. Per brief §10, coverage is reported but no percentage target is set. A CI step asserts that every `FR-` and every `T-n` identifier in this document appears at least once in the test list; the build fails if one does not. That check is what keeps this section honest as the spec changes.
+*(Review finding 14: the highest-risk code in the plugin had no test anywhere in §16, while §16.9 asserted full coverage — because the assertion only checked FR and TR identifiers, and the signer has no FR of its own. A signer bug produces HTTP 401, which §9 routes to `failed` with a notice saying "credentials need attention", sending the owner to regenerate keys that were never the problem. That is the same misattribution failure ADR-003's `credentials_unreadable` design exists to prevent, arriving through a different door.)*
+
+These run in the **unit** suite, without WordPress.
+
+| Test | Covers |
+|---|---|
+| T-900 `test_base_string_matches_rfc_5849_worked_example` | §8.1, the vector pinned there |
+| T-901 `test_encoding_is_rfc_3986_not_urlencode` | §8.1 — a space as `+` is the classic bare-401 bug |
+| T-902 `test_authorization_header_signature_is_correct` | §8.1 |
+| T-903 `test_json_body_is_not_included_in_the_signature` | §8.1 |
+| T-904 `test_multipart_body_is_not_included_in_the_signature` | §8.1, review finding 15 |
+| T-905 `test_query_parameters_are_signed` | §8.1 |
+| T-906 `test_nonce_differs_between_calls` | §8.1 — a repeated nonce is grounds for rejection |
+| T-907 `test_is_complete_requires_all_four_values` | §8.1 |
+| T-908 `test_malformed_url_throws` | §8.1 |
+
+### 16.10 Static checks
+
+Three items in the first draft's test list were not tests. *(Review finding 25.)* Escaping is a static property of source code and cannot be asserted at run time; a grep is not a PHPUnit test; and asserting `error_log` emptiness is polluted by any notice from core or another plugin in the bootstrap.
+
+| ID | Check | Mechanism |
+|---|---|---|
+| S-1 | No unprepared SQL | PHPCS `WordPress.DB.PreparedSQL`, plus the backstop grep whose exact rule is in SEC-5 |
+| S-2 | All output escaped | PHPCS `WordPress.Security.EscapeOutput` |
+| S-3 | No `error_log(` in plugin source outside a `WP_DEBUG` guard | grep over `includes/`, `admin/`, `social-relay.php` |
+| S-4 | Only `api.x.com` appears as an outbound host in source | grep for `https://` in plugin source |
+
+### 16.11 Coverage assertion
+
+Per brief §10, coverage is reported but no percentage target is set.
+
+The first draft's CI check was **self-referential and could never fail**: it asserted that every `T-n` identifier in this document appears in the test list, and every `T-n` is *defined* in the test list. It proved nothing about the suite. *(Review finding 25.)*
+
+**Specified, in two halves:**
+
+1. Every `FR-x.y` in §13 and every `TR-n` in §10.1 appears at least once in §16. (Checks the spec against itself — still worth having.)
+2. **Every `T-n` in §16 corresponds to a method of that exact name in the test suite**, found by grepping `tests/`, and every `test_` method in the suite corresponds to a `T-n` in §16. (Checks the spec against the code — this is the half that decays.)
+
+Both halves run in CI and block the merge.
 
 ---
 
 ## 17. Open items for the Specification Gate
 
-Four decisions in this document go beyond the brief, plus two facts the brief left unpinned. None blocks writing the spec; all should be seen by the reviewer in Phase 2 and by the owner at the gate rather than absorbed silently.
+Everything in this document that goes beyond `PROJECTBRIEF.md`, or that remains unpinned. Deliberately not stated as a count — review finding 27 caught that §0 claimed four while §17 listed six and four more were unlisted.
+
+Rows OPEN-7 to OPEN-10 are departures from the brief that were resolved by evidence and were nonetheless missing from the first draft's list. They are listed for visibility, not because they are unresolved.
 
 | ID | Item | Where | Recommendation |
 |---|---|---|---|
@@ -807,6 +1078,12 @@ Four decisions in this document go beyond the brief, plus two facts the brief le
 | **OPEN-4** | FR-1.5's "Send test post" publishes publicly and costs $0.015. `GET /2/users/me` proves credentials for about $0.010 without posting. | §8.4 | **Owner's call.** Proposal: keep FR-1.5 exactly as specified, and add a second, quieter "Check credentials" control beside it. This is an addition to the brief, so it is not being made unilaterally. |
 | **OPEN-5** | The create-post path is `/2/tweets` or `/2/posts` (OQ-15). Not probed, because it costs money and publishes. | §8.3 | Hold it in one constant; settle at Phase 6 via FR-1.5. |
 | **OPEN-6** | The cron staleness threshold of 5 minutes assumes Hostinger can run cron every minute (OQ-18). | §11.3 | Keep 5 minutes, as one named constant. Revisit if hPanel's minimum turns out to be 5 minutes, in which case it becomes 15. |
+| **OPEN-7** | **Host allowlist reduced to one host.** Brief §8 requires `api.x.com` **and** `upload.x.com`; INV-3 allows only the first. | INV-3 | Resolved by OQ-13: the full flow was proven against `api.x.com` alone, and `upload.x.com` is the legacy v1.1 host brief §1.3 forbids building on. Listed because it changes a brief MUST. |
+| **OPEN-8** | **One-shot upload instead of chunked.** Brief §1.3 calls chunked "the recommended path"; §8.2 says MUST NOT use it in v1. | §8.2 | Resolved by OQ-14: both were proven to work, and §0's simplicity constraint requires the one with fewer moving parts. Chunked stays documented as the fallback. |
+| **OPEN-9** | **Prefix and suffix are 60 *weighted* characters**, not 60 characters. Brief FR-1.4 says "≤ 60 characters". | §3 | Accept. Measuring the field in the same units the post is measured in is the only way the §7.3 budget arithmetic holds. It does mean a 40-emoji prefix is now rejected. |
+| **OPEN-10** | **PHP floor is 8.2**, not the brief's 8.1. | §18 | Resolved by OQ-5 on 2026-09-05. Changes the CI matrix from "PHP 8.1 and latest" to 8.2 and latest. |
+| **OPEN-11** | **X's duplicate-detection window is unmeasured**, and §9.3's INV-1 safety argument depends on it. | §9.3 | Measure in Phase 6: post, delete, repost identical text at 5, 30 and 90 minutes. If the window is shorter than 60 minutes, cap the backoff at the measured value. *(Review finding 26.)* |
+| **OPEN-12** | **The test post string is timestamped**, not fixed. Brief FR-1.5 says "a fixed test string". | §13 FR-1.5 | Accept. A fixed string is rejected as a duplicate on the second press, so the owner's only credential check reports failure for a working credential. *(Review finding 21.)* |
 
 ### Carried from `OPENQUESTIONS.md`
 
@@ -822,3 +1099,49 @@ Named so that their absence is visible rather than assumed.
 - **Exact admin page markup and styling.** Implementation detail, constrained only by the escaping rules in SEC-6.
 - **The precise wording of admin notices**, except where §6.3 forbids a specific phrasing for a specific reason.
 - **CI configuration.** Phase 4, constrained by brief §10 and by the PHP 8.2 floor decided in OQ-5, which changes the matrix from the brief's "PHP 8.1 and latest" to **8.2 and latest**.
+
+---
+
+## 19. Phase 2 review response
+
+`reviews/spec-review-1.md` returned 29 findings: 4 blocker, 13 major, 11 minor, 1 question. **All 29 were accepted and applied. None was declined**, so no ADR was opened under the brief's §11 Phase 8 rule.
+
+The review's central observation is worth recording verbatim, because it names the failure mode rather than the symptoms:
+
+> the spec reasons about WordPress as a set of clean state transitions and does not reason about WordPress as a request lifecycle.
+
+All four blockers were instances of that, and each would have passed the test named to cover it. That is the part worth remembering: the tests were not weak by accident, they were derived from the same wrong model as the design.
+
+| # | Finding | Severity | Resolved in |
+|---|---|---|---|
+| 1 | `transition_post_status` fires before `save_post`, so the meta box cannot affect its own publish | blocker | §11.5 |
+| 2 | Republished, untrashed or cloned posts send again — INV-1 unguarded at scheduling | blocker | §10.3 G-5, TR-13 |
+| 3 | `wp_schedule_single_event()` return never checked | blocker | §11.6, TR-15, INV-7 |
+| 4 | The `sending` staleness rule had no timestamp, no trigger and no transition row | blocker | §4, §10.2, TR-12, §11.7 |
+| 5 | Retry budget made the 60-minute backoff unreachable | major | §9 matrix, §9.1 |
+| 6 | Media errors could consume the tweet's retry budget, contradicting INV-6 | major | §9.5 |
+| 7 | Bulk edit, imports and programmatic publishing unguarded — a 500-post import costs $100 | major | §10.3 G-6..G-8 |
+| 8 | A URL inside the title was under-counted | major | §7.1.1 |
+| 9 | Grapheme-cluster counting without NFC under-counts combining sequences | major | §7.4 |
+| 10 | §7.1's prose put Thai and Devanagari at weight 2, contradicting its own ranges | major | §7.1 |
+| 11 | SEC-5's grep would fail the build on §11.4's own required query | major | INV-4, SEC-5, S-1 |
+| 12 | FR-1.5's "verbatim" response rendering is an admin XSS | major | FR-1.5, SEC-6 |
+| 13 | `event varchar(20)` cannot hold `credentials_unreadable` (22 chars) | major | §5 |
+| 14 | The OAuth signer had no test anywhere in §16 | major | §8.1 vector, §16.9 |
+| 15 | `wp_remote_post()` cannot send multipart natively | major | §8.1, §8.2 |
+| 16 | Event args matched by `md5(serialize())` — an int/string mismatch clears nothing | major | §11.2 |
+| 17 | FR-1.8's panel could not be rendered from the schema | major | §5, FR-1.8 |
+| 18 | The compare-and-swap collapsed three outcomes into one silent exit | minor | §11.4 |
+| 19 | No DB version mechanism, so `dbDelta()` never runs on update | minor | §3, §5.2 |
+| 20 | Cron panel shows false green to exactly the sites it should warn | minor | §11.3 |
+| 21 | The fixed test string is rejected as a duplicate on second use | minor | FR-1.5, OPEN-12 |
+| 22 | A retry re-uploads the image, corrupting the reconciliation counter | minor | §4, §9.1 |
+| 23 | No MIME allowlist and no achievable downscale rule | minor | §8.2 |
+| 24 | `credentials_unreadable` left no trace on the affected post | minor | §6.3 |
+| 25 | §16.9's coverage assertion was self-referential and could never fail | minor | §16.10, §16.11 |
+| 26 | INV-1 depends on X's unmeasured duplicate window | question | §9.3, OPEN-11 |
+| 27 | §0 claimed four deviations; there were at least ten | minor | §0, §17 |
+| 28 | The key fingerprint claim was overstated | minor | §6.2 |
+| 29 | Hook priorities, signatures and `accepted_args` unstated | minor | §15.1 |
+
+The review also recorded 14 areas checked and found sound, including the compare-and-swap concept, the weight-range conversion, the budget arithmetic, the UTC discipline, the secret envelope's cryptography, §8.2's measured response-parsing rules, and §9.4's refusal to retry an unparseable 2xx. Those are listed in the review file and are not restated here.
