@@ -47,11 +47,16 @@ Current state of the build. Updated in the same commit as the code it describes.
 | PHPUnit integration suite | **passing, 39 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
 | Full suite | **passing, 74 tests, 201 assertions** | run inside the wp-env tests container |
 | Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
+| Activates on a real site | **yes** | wp-env dev site: table created, defaults written with the switch off, both cron events scheduled |
+| End-to-end on a real site | **yes** | published a post → `scheduled` + event created → ran `srl_send_post` → failed gracefully with reason `missing`, log row self-contained |
+| Admin screens render | **yes** | settings page 4,467 bytes with all four panels; meta box renders with nonce and the correct FR-2.5 controls |
 | CI on GitHub | **never run** | no remote is configured |
 
 **Honest gap.** `SPEC.md` §16 names 132 tests. **74 exist.** The 74 cover the three pure-logic units, the scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema, and uninstall — which is where every defect found so far actually was. Not yet covered: the admin screens' rendering, the meta box save path end-to-end through a real editor request, the notices, and the email path. Those are written and linted but **not verified**, and that is not the same thing.
 
-Two real defects were found by the integration tests and fixed:
+Three real defects were found by testing against real WordPress, and fixed:
+
+- The one-minute cron schedule was registered on `plugins_loaded`, which does not fire for the plugin being activated, so the heartbeat never got scheduled. No heartbeat means no reconciliation scan and no honest cron health reading — INV-7 had no enforcement at all. Found by activating the plugin on a real site, not by any test.
 
 - `reconcile()` marked a post `failed` but left its event scheduled. A stale event inside WordPress's ten-minute duplicate window would have silently swallowed the owner's next "Repost now".
 - The same hole existed on every terminal failure in `apply_result()`.
