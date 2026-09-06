@@ -4,7 +4,7 @@ Tags: x, social, auto-post, scheduling
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.2
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -69,7 +69,7 @@ They are encrypted before being stored in the database, so a stolen database dum
 
 See CHANGELOG.md in the repository for the full history.
 
-= Unreleased =
+= 0.2.0 =
 * Added: hashtags from the post's tags, off by default, maximum three per post.
 
 = 0.1.0 =
