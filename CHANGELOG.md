@@ -10,7 +10,30 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- Hashtags built from the post's own tags, off by default and capped at three per
+  post. Multi-word tags join in PascalCase, so `machine learning` becomes
+  `#MachineLearning`; capitalisation the author typed is preserved, so `iPhone SE`
+  becomes `#iPhoneSE` rather than `#IphoneSe`. Punctuation is removed rather than
+  left in place, because X ends a hashtag at the first character outside its
+  alphabet and the tag `co-op` would otherwise ship as `#co`. An all-digit tag
+  produces no hashtag, because X does not link one. `SPEC.md` §7.6, FR-4.13,
+  tests T-441 through T-449.
+- Two settings: `hashtags_enabled` (default off) and `hashtags_max` (default 3,
+  maximum 10).
+
+### Changed
+
+- `SRL_Text::compose()` takes a fifth argument, the hashtag list, and places it
+  after the suffix and before the newline. Hashtags are dropped whole, from the
+  end, whenever they would not fit; the title is never shortened to make room for
+  one, and a title long enough to truncate on its own produces text identical to
+  what it produced before this feature existed.
+- `readme.txt` no longer lists hashtags under "What it does not do".
+  `PROJECTBRIEF.md` §3 still lists hashtag generation as a v1 non-goal; the owner
+  asked for the feature anyway, and ADR-005 records the conflict rather than
+  resolving it silently.
 
 ## [0.1.0] - 2026-09-05
 

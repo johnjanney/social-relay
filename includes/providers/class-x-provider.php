@@ -190,7 +190,7 @@ class SRL_X_Provider implements SRL_Provider {
 
 		$result->media_id = $media_id;
 
-		$text = SRL_Text::compose( $payload->title, $payload->permalink, $payload->prefix, $payload->suffix );
+		$text = SRL_Text::compose( $payload->title, $payload->permalink, $payload->prefix, $payload->suffix, $payload->hashtags );
 
 		return $this->create_post( $text, $media_id, $result );
 	}

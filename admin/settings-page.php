@@ -140,6 +140,28 @@ $srl_usage      = SRL_Usage::for_month( $srl_month );
 				</td>
 			</tr>
 			<tr>
+				<th scope="row"><?php esc_html_e( 'Hashtags', 'social-relay' ); ?></th>
+				<td>
+					<label>
+						<input type="checkbox" name="<?php echo esc_attr( SRL_Settings::OPTION ); ?>[hashtags_enabled]" value="1" <?php checked( ! empty( $srl_settings['hashtags_enabled'] ) ); ?> />
+						<?php esc_html_e( 'Add the post\'s tags as hashtags', 'social-relay' ); ?>
+					</label>
+					<p>
+						<label for="srl-hashtags-max"><?php esc_html_e( 'At most', 'social-relay' ); ?></label>
+						<input type="number" id="srl-hashtags-max" class="small-text" min="0" max="<?php echo esc_attr( (string) SRL_Settings::MAX_HASHTAG_COUNT ); ?>" step="1"
+							name="<?php echo esc_attr( SRL_Settings::OPTION ); ?>[hashtags_max]"
+							value="<?php echo esc_attr( (string) $srl_settings['hashtags_max'] ); ?>" />
+						<?php esc_html_e( 'per post', 'social-relay' ); ?>
+					</p>
+					<p class="description">
+						<?php esc_html_e( 'Multi-word tags are joined in PascalCase, because X ends a hashtag at the first space or punctuation mark: "machine learning" becomes #MachineLearning and "co-op" becomes #CoOp. A tag you capitalised yourself is left alone, so "iPhone SE" becomes #iPhoneSE. Tags made only of digits are skipped, because X does not link them.', 'social-relay' ); ?>
+					</p>
+					<p class="description">
+						<?php esc_html_e( 'Hashtags are dropped, whole and from the end, whenever they would not fit. A long title keeps its words and loses its hashtags, never the other way round.', 'social-relay' ); ?>
+					</p>
+				</td>
+			</tr>
+			<tr>
 				<th scope="row"><?php esc_html_e( 'Email on failure', 'social-relay' ); ?></th>
 				<td>
 					<label>

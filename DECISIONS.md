@@ -8,7 +8,9 @@ Status values: `proposed` → `accepted` → `superseded`.
 
 **Owner decisions of 2026-09-05.** John confirmed the name **Social Relay** / `social-relay`, a **PHP 8.2** floor, **GPL-2.0-or-later**, and **Hostinger** as the host, and accepted the recommendations attached to each ADR. ADR-003 and ADR-004 are therefore **accepted**. ADR-003's Decision section has been amended to fold in the salt-rotation mitigation that was previously only a recorded disagreement; the original recommendation and the reasoning that changed it are both preserved below, so nothing was altered silently.
 
-**All four ADRs are now `accepted`.** ADR-001 and ADR-002 were unblocked on 2026-09-05 when the OQ-2 probe returned HTTP 200 from every media-upload endpoint under OAuth 1.0a. The contingency planning recorded in ADR-001's Alternatives is retained, not deleted: it is the record of a risk retired by measurement rather than assumed away, and it is the plan that would have been executed had the result gone the other way.
+**All five ADRs are now `accepted`.** ADR-001 and ADR-002 were unblocked on 2026-09-05 when the OQ-2 probe returned HTTP 200 from every media-upload endpoint under OAuth 1.0a. The contingency planning recorded in ADR-001's Alternatives is retained, not deleted: it is the record of a risk retired by measurement rather than assumed away, and it is the plan that would have been executed had the result gone the other way.
+
+**ADR-005 records a decision that contradicts the brief.** `PROJECTBRIEF.md` §3 lists hashtag generation as a v1 non-goal; the owner asked for the feature on 2026-09-05 and it is built. The non-goal line stands in the brief as the historical record of the original ask, and ADR-005 is what resolves the disagreement. Read the brief's §3 alongside it.
 
 From Phase 8 onward, every review finding that is declined rather than fixed becomes an ADR here.
 
@@ -201,3 +203,45 @@ Even with delay 0 the send goes through the scheduler (FR-3.2), so there is exac
 - *Ship a custom background worker or a loopback-request runner.* Rejected explicitly by brief §1.4, and it would mean owning a scheduler's failure modes for no gain over system cron.
 - *Post inline during the editor's save request when the delay is 0.* Rejected by FR-3.2: it creates a second send path to test, and it makes the editor's save wait on the X API, so a slow or hanging API call becomes a hung publish button.
 - *Use an external cron-ping service as the primary mechanism.* Rejected on 2026-09-05, and now moot: OQ-11 closed with the host confirmed as **Hostinger**, which provides native cron jobs in hPanel (Advanced → Cron Jobs). No third party needs to hold a key to whether this site's posts go out.
+
+---
+
+## ADR-005 — Build hashtags from the post's own tags, joined in PascalCase; overrides a brief non-goal
+
+**Status:** **accepted** 2026-09-05
+
+**Date:** 2026-09-05
+
+**Context**
+
+- **The brief forbids this.** `PROJECTBRIEF.md` §3 "Non-goals for v1" says, verbatim: "Hashtag generation, AI-written captions, URL shortening, UTM appending." The section opens with "Do not build them." `readme.txt` carried the same line under "What it does not do". The owner asked for the feature anyway on 2026-09-05, in those words: "Add a feature that adds hashtags to the social post using the post tags linked to the article."
+- The owner's instruction outranks the brief, because the brief is a record of what the owner asked for and this is the owner asking for something else. But `AGENTS.md` requires the disagreement be stated rather than silently resolved, which is what this ADR is for. The non-goal line in `PROJECTBRIEF.md` is left standing as the historical record; `readme.txt` is corrected, because it describes the shipped plugin rather than the original ask.
+- There is a narrower reading under which no conflict exists: the brief forbids hashtag *generation*, and nothing here generates a hashtag. Every hashtag is a term the author already typed into the post's tag box, mechanically transformed. That reading is defensible and it is probably what the non-goal meant, sitting as it does beside "AI-written captions". It is recorded as a note, not leaned on: the decision stands on the owner's instruction.
+- X ends a hashtag at the first character outside `[letter, digit, underscore]`. This is what makes the multi-word question a correctness question rather than a cosmetic one: the tag `co-op` with its spaces merely stripped ships as `#co`, and `rock 'n' roll` ships as `#rock`. Both are *wrong* hashtags, and both would ship silently.
+
+**Decision**
+
+Convert each `post_tag` term to one hashtag by splitting on everything outside `[letter, digit, mark, underscore]`, capitalising the first letter of any word the author left entirely lower-case, and concatenating with no separator. Full rules and worked examples in `SPEC.md` §7.6.
+
+Three sub-decisions, each of which could have gone another way:
+
+1. **PascalCase, not lower-case and not underscores.** It survives punctuation, which lower-case-and-strip does not. A screen reader segments `#MachineLearning` and reads `#machinelearning` as one unpronounceable run, so the choice has an accessibility dimension rather than only a stylistic one. And it is the convention on X, so the output reads as deliberate.
+2. **Existing capitalisation is preserved.** Upper-casing every word unconditionally turns `iPhone SE` into `#IphoneSe`, which is a different hashtag from the one the author meant. A word is capitalised only when it contains no upper-case letter already.
+3. **Hashtags are dropped whole, from the end, before the title is truncated.** A hashtag cut in half is a different hashtag, not a shorter one, so the block is never truncated the way the title is; and a tag is worth less than the words the author wrote. The consequence worth stating plainly: a title long enough to truncate sheds every hashtag first, and the text it then produces is byte-identical to what the same title produced before this feature existed. §7.3's guarantee that the title always gets at least 134 weighted characters survives untouched.
+
+Off by default, like the master switch, and capped at three hashtags per post by default. An existing site's tag vocabulary was not written with hashtags in mind — tags like `2026 predictions` or `part 2` are ordinary and read badly as hashtags — so the owner should see the output before it ships.
+
+**Consequences**
+
+*Easier:* No new UI beyond two controls, no new storage, no new API call, and no new failure mode. The whole feature is three pure functions in `SRL_Text` plus one `wp_get_post_terms()` read at send time, so all but one of its nine tests run in the WordPress-free unit suite. Because hashtags are dropped rather than truncated, the composition's hardest property — never exceeding 280 weighted — is unchanged and its existing tests still bound it.
+
+*Harder:* The plugin now has an opinion about how the owner's taxonomy should read on X, and that opinion can be wrong for a specific tag with no per-tag override to correct it. Two premises about X's own rendering are unverified (OQ-20); neither can fail a send, but either could make a hashtag read differently than intended. And `PROJECTBRIEF.md` §3 now contains a line the plugin does not honour, which is a documentation hazard for anyone reading the brief as current scope rather than as the original ask — this ADR is the pointer that resolves it.
+
+**Alternatives rejected**
+
+- *Lower-case and strip spaces.* Rejected: produces `#co` for `co-op`, and defeats screen-reader segmentation.
+- *Underscore separator.* Rejected: legal on X but unconventional, and each underscore costs a weighted character against the title's budget.
+- *Skip any tag containing a space.* Rejected: the safest rule and the least useful one, since most real tags are multi-word. It trades a small correctness risk for dropping most of the feature.
+- *Truncate the hashtag block to fit.* Rejected: a truncated hashtag is a wrong hashtag pointing at a real and unrelated conversation, which is worse than no hashtag.
+- *Let hashtags shorten the title.* Rejected: it inverts the priority. The author wrote the title; the tags are metadata.
+- *A per-tag override field, so the owner can pin `#SEO` to a tag named `search engine optimisation`.* Rejected for v1 under §0.5: it means term meta, a UI on the term edit screen, and a migration path, to fix a case the owner can already handle by renaming the tag.

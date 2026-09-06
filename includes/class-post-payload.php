@@ -72,15 +72,26 @@ class SRL_Post_Payload {
 	public string $suffix;
 
 	/**
+	 * Hashtags to append, each including its leading '#'.
+	 *
+	 * Built at send time from the post's tags, so a tag edited during the
+	 * delay is reflected in the same way FR-4.3 requires of the title.
+	 *
+	 * @var array<int, string>
+	 */
+	public array $hashtags;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param string      $title             Post title.
-	 * @param string      $permalink         Permalink.
-	 * @param string|null $image_path        Absolute path, or null.
-	 * @param string|null $image_mime        MIME type, or null.
-	 * @param string      $prefix            Optional prefix.
-	 * @param string      $suffix            Optional suffix.
-	 * @param string|null $existing_media_id Reusable media id, or null.
+	 * @param string             $title             Post title.
+	 * @param string             $permalink         Permalink.
+	 * @param string|null        $image_path        Absolute path, or null.
+	 * @param string|null        $image_mime        MIME type, or null.
+	 * @param string             $prefix            Optional prefix.
+	 * @param string             $suffix            Optional suffix.
+	 * @param string|null        $existing_media_id Reusable media id, or null.
+	 * @param array<int, string> $hashtags          Hashtags, each with its '#'.
 	 */
 	public function __construct(
 		string $title,
@@ -89,7 +100,8 @@ class SRL_Post_Payload {
 		?string $image_mime = null,
 		string $prefix = '',
 		string $suffix = '',
-		?string $existing_media_id = null
+		?string $existing_media_id = null,
+		array $hashtags = array()
 	) {
 		$this->title             = $title;
 		$this->permalink         = $permalink;
@@ -98,6 +110,7 @@ class SRL_Post_Payload {
 		$this->prefix            = $prefix;
 		$this->suffix            = $suffix;
 		$this->existing_media_id = $existing_media_id;
+		$this->hashtags          = $hashtags;
 	}
 
 	/**

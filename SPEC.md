@@ -77,6 +77,8 @@ One option, `srl_settings`, holding an array. Autoload **yes** — it is read on
 | `prefix` | string | `''` | Maximum 60 characters, weighted (§7). |
 | `suffix` | string | `''` | Maximum 60 characters, weighted (§7). |
 | `email_on_failure` | bool | `false` | OQ-10, resolved: off. |
+| `hashtags_enabled` | bool | `false` | Append the post's tags as hashtags. §7.6. |
+| `hashtags_max` | int | `3` | `0` to `10`. |
 
 Two further options, both autoload **no**:
 
@@ -105,6 +107,7 @@ Every field is sanitized on save and validated before use.
 - `delay_value` — `absint()`, then range-checked against §3.1.
 - `delay_unit` — whitelist match; anything else falls back to `minutes`.
 - `prefix`, `suffix` — `sanitize_text_field()`, then rejected if weighted length exceeds 60.
+- `hashtags_max` — `absint()`, then rejected above 10. A value of 0 is valid and means the same as the switch being off.
 - The four credential fields — see §6.4 for the replace-or-keep rule. A submitted empty value means *keep the stored value*, not *erase it*, because the form never renders the real secret.
 
 ---
@@ -300,10 +303,11 @@ Under-counting is the fatal direction: the text passes the plugin's own ≤ 280 
 ### 7.2 The composition
 
 ```
-{prefix} {title} {suffix}\n{permalink}
+{prefix} {title} {suffix} {hashtags}\n{permalink}
 ```
 
-- A single space joins prefix to title and title to suffix. If prefix or suffix is empty, its space is omitted too; the text never begins or ends with a stray space, and never contains a double space from an absent part.
+- A single space joins each part to the next. If any part is empty, its space is omitted too; the text never begins or ends with a stray space, and never contains a double space from an absent part.
+- The hashtag block is a single space-separated run, placed after the suffix and before the newline. It is built per §7.6 and is empty unless `hashtags_enabled` is on.
 - Exactly one `\n` separates the text block from the permalink. It weighs 1.
 - The permalink is the **last** element and is never modified, never shortened, and never truncated.
 
@@ -314,6 +318,8 @@ budget_for_text = 280 - 23 (permalink) - 1 (newline) = 256
 ```
 
 The prefix and suffix are capped at 60 weighted characters each (§3). With both at maximum and both joining spaces present, the worst case leaves `256 - 60 - 60 - 2 = 134` weighted characters for the title. The title is therefore always allotted at least 134.
+
+The hashtag block does **not** reduce that floor, because §7.6 drops hashtags before the title loses anything. The 134 guarantee survives the feature unchanged.
 
 ### 7.4 Truncation
 
@@ -335,6 +341,53 @@ The prefix and suffix are capped at 60 weighted characters each (§3). With both
 ### 7.5 Read at send time
 
 Per FR-4.3, the title and permalink are read **at send time**, not at schedule time. The owner may have corrected a typo during the delay, and the shipped post must reflect the correction.
+
+---
+
+## 7.6 Hashtags from post tags
+
+Implements FR-4.13. Off by default; the block is empty unless `hashtags_enabled` is on.
+
+The post's `post_tag` terms are read **at send time**, for the same reason §7.5 reads the title then: a tag corrected during the delay must reach X.
+
+### 7.6.1 One tag to one hashtag
+
+X ends a hashtag at the first character outside `[letter, digit, underscore]`. This makes the conversion a repair, not a reformatting: shipping the tag `co-op` with its spaces merely stripped produces the hashtag `#co`, and `rock 'n' roll` produces `#rock`. Both are wrong hashtags rather than ugly ones, and both would ship silently.
+
+**Specified:**
+
+1. NFC-normalize and trim the term name.
+2. Split on every run of characters that is not a Unicode letter, digit, mark, or underscore.
+3. For each word: if it contains **no** upper-case letter, upper-case its first character. Otherwise leave it exactly as the author typed it.
+4. Concatenate the words with no separator, and prepend `#`.
+5. Produce **nothing** if the result is empty or consists only of digits and underscores.
+
+| Term name | Result | Why |
+|---|---|---|
+| `machine learning` | `#MachineLearning` | PascalCase join |
+| `iPhone SE` | `#iPhoneSE` | rule 3's exception; unconditional capitalisation gives the wrong `#IphoneSe` |
+| `co-op` | `#CoOp` | punctuation removed, not left to truncate the hashtag |
+| `rock 'n' roll` | `#RockNRoll` | as above |
+| `Web 2.0` | `#Web20` | digits are kept; the period is not |
+| `café society` | `#CaféSociety` | X accepts non-ASCII letters |
+| `2026` | *(none)* | rule 5 |
+
+**Why PascalCase rather than lower-case or underscores.** Three reasons, in order of weight. It survives punctuation, which lower-case-and-strip does not. A screen reader segments `#MachineLearning` into two words and reads `#machinelearning` as one unpronounceable run, so this is an accessibility difference rather than a stylistic one. And it is the convention on X, so the output reads as deliberate. Underscores are legal in an X hashtag but are unconventional and cost a weighted character each.
+
+**Unverified.** The two behavioural claims above — that X terminates a hashtag at the first character outside its alphabet, and that it does not linkify an all-digit hashtag — are taken from X's documented hashtag behaviour and have **not** been measured against the live API. Neither is load-bearing for INV-1 or for the 280 limit: if either is wrong, the cost is a hashtag that reads slightly differently, not a failed post. Tracked in `OPENQUESTIONS.md` as OQ-20 and measurable in the Phase 6 staging run.
+
+### 7.6.2 The list
+
+Term names are converted in the order the taxonomy returns them, empties are discarded, duplicates are collapsed **case-insensitively** (X treats `#WordPress` and `#wordpress` as one hashtag, and two distinct terms can normalise onto one), and the first `hashtags_max` survivors are kept.
+
+### 7.6.3 The budget
+
+Two caps, in this order.
+
+1. **The block cap.** The hashtag block may not exceed **60 weighted characters**, the same cap the prefix and suffix carry and for the same reason: it is fixed text charged against the title's budget. Hashtags are added in order until the next one would breach the cap, and the walk then **stops** rather than skipping ahead, so the block is always a prefix of the tag order and never silently reorders what the owner sees.
+2. **The fit.** Hashtags are then dropped **whole, from the end**, until the title fits without truncation. A hashtag cut in half is a different hashtag, not a shorter one, so the block is never truncated the way a title is. And a tag is worth less than the words the author wrote, so the block goes first.
+
+**MUST:** a title long enough to truncate on its own sheds every hashtag before §7.4 runs, and the resulting text is then byte-identical to what the same title produced before this feature existed. §16.6 asserts that equality directly.
 
 ---
 
@@ -785,6 +838,7 @@ Both buttons require a nonce and the `edit_post` capability for the specific pos
 | FR-4.10 | Any other 4xx does not retry | Status `failed`, body logged | T-462 |
 | FR-4.11 | Duplicate-content error sets `failed` reason `duplicate`, no retry | And `duplicate_on_retry` when attempts > 0, per §9.3 | T-470, T-471 |
 | FR-4.12 | Every call increments the usage counter | Including failed calls | T-480 |
+| FR-4.13 | Append the post's tags as hashtags, per §7.6, when enabled | Off by default; multi-word tags join in PascalCase; hashtags are dropped whole before the title is truncated | T-441 through T-449 |
 
 ### FR-5 Logging and notices
 
@@ -990,6 +1044,20 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-439 `test_adjacent_zwj_emoji_are_not_merged` | §7.4 — PCRE2's `\X` merges them, a 278-unit under-count |
 | T-440b `test_invalid_url_host_is_weighed_literally_not_as_23` | §7.1.1 — X does not shorten an over-long host |
 | T-428 `test_empty_prefix_and_suffix_produce_no_double_spaces` | §7.2 |
+
+### 16.6.1 Hashtags
+
+| Test | Covers |
+|---|---|
+| T-441 `test_multi_word_tag_becomes_pascal_case_hashtag` | FR-4.13, §7.6.1 |
+| T-442 `test_existing_capitalisation_in_a_tag_is_preserved` | FR-4.13, §7.6.1 rule 3 |
+| T-443 `test_punctuation_inside_a_tag_is_removed_not_left_to_truncate_the_hashtag` | FR-4.13, §7.6.1 — the `#co` failure |
+| T-444 `test_all_digit_tag_produces_no_hashtag` | FR-4.13, §7.6.1 rule 5 |
+| T-445 `test_hashtags_are_deduplicated_case_insensitively_and_capped_by_count` | FR-4.13, §7.6.2 |
+| T-446 `test_hashtag_block_is_capped_at_sixty_weighted` | FR-4.13, §7.6.3 cap 1 |
+| T-447 `test_hashtags_are_dropped_whole_before_the_title_is_truncated` | FR-4.13, §7.6.3 cap 2, §7.3 |
+| T-448 `test_hashtags_appear_after_the_suffix_and_before_the_url` | FR-4.13, §7.2 |
+| T-449 `test_post_tags_become_hashtags_at_send_time` | FR-4.13, §7.5 |
 
 ### 16.7 Error handling
 

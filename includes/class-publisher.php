@@ -200,8 +200,31 @@ class SRL_Publisher {
 			$image_mime,
 			(string) SRL_Settings::get( 'prefix', '' ),
 			(string) SRL_Settings::get( 'suffix', '' ),
-			$reusable
+			$reusable,
+			self::hashtags_for( $post_id )
 		);
+	}
+
+	/**
+	 * Hashtags for one post, read at send time from its tags.
+	 *
+	 * @param int $post_id Post id.
+	 * @return array<int, string>
+	 */
+	private static function hashtags_for( int $post_id ): array {
+		if ( ! SRL_Settings::get( 'hashtags_enabled', false ) ) {
+			return array();
+		}
+
+		$names = wp_get_post_terms( $post_id, 'post_tag', array( 'fields' => 'names' ) );
+
+		// A taxonomy error is not a reason to fail the post. INV-6 makes the
+		// same call about the featured image, and a hashtag matters less.
+		if ( is_wp_error( $names ) || ! is_array( $names ) ) {
+			return array();
+		}
+
+		return SRL_Text::hashtags( array_map( 'strval', $names ), (int) SRL_Settings::get( 'hashtags_max', 3 ) );
 	}
 
 	/**

@@ -146,13 +146,36 @@ X allows 280 characters, and it counts them its own way: most characters count a
 The post is built as:
 
 ```
-{prefix} {your title} {suffix}
+{prefix} {your title} {suffix} {hashtags}
 {link to your post}
 ```
 
 If that is too long, **only the title is shortened**, and it ends with a single `…`. The link is never touched — it is the point of the post.
 
 If your titles are regularly getting cut, shorter titles are the fix. Prefix and suffix, if the site uses them, eat into the same budget.
+
+---
+
+## Hashtags from your tags
+
+Off unless you turn it on, under Settings → Social Relay → Hashtags. With it on, the plugin adds the post's own tags to the end of the post as hashtags. It adds three at most by default; you can change that number or set it to zero.
+
+**Multi-word tags.** A hashtag cannot contain a space, and X stops reading a hashtag at the first space or punctuation mark. So the words are joined together and each one is capitalised:
+
+| Your tag | What is posted |
+|---|---|
+| `machine learning` | `#MachineLearning` |
+| `co-op` | `#CoOp` |
+| `rock 'n' roll` | `#RockNRoll` |
+| `Web 2.0` | `#Web20` |
+
+**Capitalisation you typed is kept.** A tag you wrote as `iPhone SE` is posted as `#iPhoneSE`, not `#IphoneSe`. The plugin only adds a capital letter to a word you typed entirely in lower case.
+
+**Some tags produce nothing.** A tag made only of numbers, like `2026`, is skipped, because X does not turn an all-number hashtag into a link — it would just be a stray `#` in your post.
+
+**Hashtags never cost you words.** If the post is too long, hashtags are removed one at a time, whole, from the end, until it fits. Your title is only shortened after every hashtag is gone. So on a long title you may see fewer hashtags than you have tags, or none at all — that is the plugin protecting your title, not a fault.
+
+**If a tag reads badly as a hashtag,** rename the tag. There is no per-tag override; the hashtag is always built from the tag name as you typed it.
 
 ---
 
