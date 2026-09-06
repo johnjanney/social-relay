@@ -69,9 +69,12 @@ sent ──republish──▶ sent          (no-op: only "Repost now" produces a
 scheduled ──schedule failed or event lost──▶ failed
 scheduled ──"Cancel scheduled post"──▶ cancelled
 sent / failed ──"Repost now" + confirm──▶ scheduled (delay 0)
+none / cancelled ──"Post to X now" + confirm──▶ scheduled (delay 0)
 ```
 
 A post is sent **at most once, ever**. Unpublishing and republishing does not send it again; neither does untrashing, nor duplicating it with a clone plugin. The only path to a second post is the "Repost now" button, which asks for confirmation.
+
+A published post the automatic path never reached — one older than the plugin, one it skipped, or one you cancelled — has a "Post to X now" button in the same box. It goes through the same scheduler and the same at-most-once check; it is a first send, not a second.
 
 ## Security, and its limit
 

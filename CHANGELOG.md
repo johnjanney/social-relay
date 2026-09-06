@@ -10,7 +10,24 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- A "Post to X now" button in the post meta box, for a published post the
+  automatic trigger never reached: one published before the plugin was installed,
+  one skipped by the import, bulk-edit or freshness guards, one published with a
+  switch off, or one whose scheduled post was cancelled. It asks for confirmation,
+  schedules a single cron event at delay 0 like "Repost now", and never sends
+  inline. It is refused from `sent`, `sending` and `failed`, and for any post that
+  is not published. Brief v0.4 amendment 3, spec amendment 2, FR-2.6, TR-16,
+  ADR-006. Four integration tests, T-250 to T-253.
+
+### Changed
+
+- Both "Repost now" and "Post to X now" now set the post's "Post to X" switch on.
+  The button submits the whole meta box form, so on a site whose master switch is
+  off the unticked checkbox was stored a moment before the click was handled, and
+  the publisher's re-read then cancelled the send the owner had just confirmed
+  with "Per-post switch was turned off". A confirmed click outranks a checkbox.
 
 ## [0.2.0] - 2026-09-05
 
