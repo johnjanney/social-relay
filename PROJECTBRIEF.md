@@ -1,7 +1,7 @@
 # PROJECTBRIEF.md — Social Relay for WordPress
 
 **Working name:** Social Relay (slug `social-relay`, prefix `srl_`). The name is a placeholder. Confirm it in Phase 0.
-**Brief version:** 0.2 — 2026-09-05 (amendment 1, recorded in §3)
+**Brief version:** 0.3 — 2026-09-05 (amendments 1 and 2; see §3 and §0)
 **Author:** John Janney
 **Reader:** Claude Code CLI. Read this file in full before you write any code.
 
@@ -12,8 +12,30 @@
 1. This brief is the input to Phase 0 and Phase 1 of the development framework in Section 11.
 2. Do not write plugin code until the Specification Gate in Section 11 is passed.
 3. Where this brief says **MUST**, the requirement is fixed. Where it says **SHOULD**, you can propose a change in `DECISIONS.md`. Where it says **OPEN**, record the item in `OPENQUESTIONS.md` and ask the owner.
-4. Every claim in Section 1 has a label: **[VERIFIED]** (checked against a source on 2026-09-05), **[INFERRED]** (a reasoned conclusion), or **[UNVERIFIED]** (must be checked in Phase 0).
+4. Every claim in Section 1 has a label: **[VERIFIED]** (checked against a source on 2026-09-05), **[MEASURED]** (proved by a real API call in Phase 0 — the strongest label in this document), **[INFERRED]** (a reasoned conclusion), or **[UNVERIFIED]** (not yet established). Labels were swept after Phase 0; see amendment 2.
 5. Treat "simple" as a hard constraint. When two designs meet a requirement, choose the one with less code and fewer moving parts.
+
+**Amendment 2 — 2026-09-05. Evidence labels swept after Phase 0.**
+
+This brief was written before Phase 0 ran. Its labels recorded what was known on the day it was written, and several went stale the moment the probe returned. A label that says "check this in Phase 0" long after Phase 0 finished is worse than no label: it tells a reader the question is open when it is answered, and it hides the answer.
+
+Every change below is a label, a pointer to the row in `OPENQUESTIONS.md` that settles it, or both. **No requirement changed.**
+
+| Where | Was | Now | Source |
+|---|---|---|---|
+| §1.2 media auth | **[UNVERIFIED]** | **[MEASURED]** | OQ-2 — live call, HTTP 200 |
+| §1.2 Projects | **[VERIFIED]** | **[UNVERIFIED]** | OQ-19 — four current doc pages contradict it |
+| §1.3 upload path | — | **[MEASURED]** added | OQ-14 — both paths work; one-shot chosen |
+| §4 FR-4.5 length limit | **[UNVERIFIED]** | **[VERIFIED]** | OQ-3 — 280, and 23 per URL |
+| §5 signing example | **[UNVERIFIED]** | **[VERIFIED]** via the fallback | OQ-12 — the example was not found; RFC 5849 used |
+| §9 PHP floor | "confirm in Phase 0" | **8.2** | OQ-5 |
+| §10 CI matrix | PHP 8.1 | PHP 8.2 | follows OQ-5 |
+
+**One label is deliberately downgraded, not raised.** §1.2's claim that a v2 App must sit inside a Project was labelled **[VERIFIED]** and the current documentation no longer supports it. Correcting only the labels that improved would have left the one misleading claim standing, so it is marked **[UNVERIFIED]** and points at OQ-19.
+
+**Two labels correctly stay [UNVERIFIED]**, because they are still unknown, not stale: the per-image media cost (**OQ-1b**) and — recorded in `SPEC.md` §17 as OPEN-5 rather than here — whether the create-post path is `/2/tweets` or `/2/posts` (**OQ-15**).
+
+**One contradiction is annotated rather than rewritten.** §8 instructs that outbound requests go to `api.x.com` **and `upload.x.com`**. OQ-13 proved the whole flow against `api.x.com` alone, and `upload.x.com` is the legacy v1.1 host that §1.3 forbids building on, so `SPEC.md` INV-3 allows one host only. That is a departure from a brief instruction, already recorded as `SPEC.md` §17 **OPEN-7**; the line carries an inline correction so nobody implements from it, and the original instruction stays visible.
 
 ---
 
@@ -26,19 +48,19 @@ Read these before you make any design decision. Several change the shape of the 
 - **[VERIFIED]** X ended its free API tier for new developers on 2026-02-06. New developers buy credits in the X Developer Console and pay per request. Legacy Basic and Pro plans are closed to new sign-ups.
 - **[VERIFIED]** Rate card as of the April 2026 repricing: `POST /2/tweets` without a URL costs about $0.015 per request. `POST /2/tweets` **with a URL costs about $0.20 per request**. Prices are set by X and can change. Confirm the current rate on the official pricing page during Phase 0.
 - **[INFERRED]** This plugin posts a URL in every post by design. Each post will bill at the URL rate. For a site that publishes 20 posts a month, the cost is about $4. For 500 posts a month, the cost is about $100. Document this in `INSTALLATION.md` so the site owner can budget.
-- **[VERIFIED]** X reports that billing for the media-upload calls under pay-per-use is not fully documented. Developers have asked X to clarify. Treat the per-image cost as **[UNVERIFIED]** and measure it in Phase 10 against the Developer Console usage report.
+- **[VERIFIED]** X reports that billing for the media-upload calls under pay-per-use is not fully documented. Developers have asked X to clarify. Treat the per-image cost as **[UNVERIFIED]** and measure it against the Developer Console usage report. *Amendment 2:* this label is **correct and stays** — it is `OPENQUESTIONS.md` **OQ-1b**, still open. It is now measurable earlier than Phase 10: the Phase 0 probe made six billable-or-not requests in a two-second window against a freshly funded account, so the credit-balance delta answers it.
 - **[REQUIREMENT]** The plugin MUST keep an accurate local count of API requests it makes, by endpoint, so the owner can reconcile against the X invoice.
 
 ### 1.2 Authentication
 
-- **[VERIFIED]** X API v2 requires the App to sit inside a Project in the Developer Console. An App outside a Project fails on v2 calls.
+- **[UNVERIFIED]** X API v2 requires the App to sit inside a Project in the Developer Console. An App outside a Project fails on v2 calls. *Amendment 2 downgraded this from **[VERIFIED]**.* Four current documentation pages describe an App-centric console with no Project concept, and the console has moved to `console.x.com`; the requirement was probably dropped or absorbed in the February 2026 rework, but silence across four pages is not a statement that Projects are gone. `OPENQUESTIONS.md` **OQ-19**. **Nothing in the plugin depends on this** — it changes only the wording of `INSTALLATION.md` step 2 and one troubleshooting message.
 - **[VERIFIED]** Two user-context auth methods exist: OAuth 1.0a (consumer key/secret + access token/secret, generated once in the Console) and OAuth 2.0 Authorization Code with PKCE (needs a callback URL, token refresh, and `offline.access` scope).
 - **[RECOMMENDED]** Use **OAuth 1.0a with owner-generated user tokens** for v1. Reason: the site owner posts to their own account. There is no third-party user, so there is no need for an authorization flow, a callback endpoint, or refresh-token logic. The owner pastes four strings into the settings page. This removes the largest source of complexity and the largest source of silent failure (expired refresh tokens). Record this as ADR-001. OAuth 2.0 PKCE is a documented non-goal for v1.
-- **[UNVERIFIED]** Confirm in Phase 0 that `POST /2/media/upload` accepts OAuth 1.0a user-context. Public documentation says it does. Test it with a real call before the Specification Gate.
+- **[MEASURED]** `POST /2/media/upload` **accepts OAuth 1.0a user context.** *Amendment 2, was [UNVERIFIED].* Proved on 2026-09-05 at 22:49 UTC by `bin/verify-x-api.php` against `api.x.com`, API version `2.168`: `GET /2/users/me` returned 200 **first**, so the signer and credentials were proved correct before any media call, and then every upload step returned 200 with `x-access-level: read-write`. `OPENQUESTIONS.md` **OQ-2**. This is what unblocked ADR-001 and ADR-002.
 
 ### 1.3 Attaching the featured image
 
-- **[VERIFIED]** X does not fetch an image from a URL at post time. To attach an image, the client uploads the bytes to `POST /2/media/upload` (simple upload for images; chunked upload is the recommended path), receives a `media_id`, and passes it in `media.media_ids` on `POST /2/tweets`.
+- **[VERIFIED]** X does not fetch an image from a URL at post time. To attach an image, the client uploads the bytes to `POST /2/media/upload` (simple upload for images; chunked upload is the recommended path), receives a `media_id`, and passes it in `media.media_ids` on `POST /2/tweets`. *Amendment 2:* **[MEASURED]** both the one-shot and the chunked paths work (**OQ-14**), and `SPEC.md` §8.2 requires the **one-shot** path in v1 — one call instead of three, under §0.5's simplicity constraint — with chunked kept as the documented fallback. The two return different JSON shapes for the same data (`height`/`width` versus `h`/`w`), so no parser may assume one.
 - **[VERIFIED]** The v1.1 media upload endpoint is legacy. Build on v2 media upload. Do not build on v1.1.
 - **[INFERRED]** An alternative is to attach no image and rely on X's link-preview card, which reads `og:image` from the post URL. This is simpler, but the card depends on X's crawler and on the site's Open Graph tags, and X has changed card rendering several times since 2023. The owner asked for the feature image to be posted. Upload it explicitly. Record this as ADR-002.
 - **[REQUIREMENT]** If the post has no featured image, or the image upload fails after retries, the plugin MUST still publish the text-and-URL post and MUST record that the image was omitted.
@@ -123,7 +145,7 @@ Number each requirement. Each one MUST map to at least one automated test in Pha
 - FR-4.2 Set `_srl_status = sending` before the first API call. This is the lock.
 - FR-4.3 Read the current title and permalink at send time, not at schedule time. The owner may have corrected a typo during the delay.
 - FR-4.4 If a featured image exists: fetch the file from the local filesystem (not over HTTP). Downscale if larger than 5 MB or the X pixel limit. Upload via `POST /2/media/upload`. On failure after retries, continue without the image and record `image_omitted = true` with the reason.
-- FR-4.5 Compose text: `{prefix} {title} {suffix} {hashtags}\n{permalink}`, where the hashtag block is empty unless FR-4.13 is enabled. Truncate the title, never the URL, so the text fits X's length limit. X counts every URL as 23 characters. Confirm the current limit in Phase 0 (**[UNVERIFIED]**: 280 for standard accounts).
+- FR-4.5 Compose text: `{prefix} {title} {suffix} {hashtags}\n{permalink}`, where the hashtag block is empty unless FR-4.13 is enabled. Truncate the title, never the URL, so the text fits X's length limit. X counts every URL as 23 characters. The limit is **[VERIFIED]** at **280** for standard accounts, and every URL counts as **23** regardless of its real length — <https://docs.x.com/fundamentals/counting-characters>, read 2026-09-05, `OPENQUESTIONS.md` **OQ-3** (*amendment 2; was [UNVERIFIED]*). Counting is **weighted**, not `strlen()` or `mb_strlen()`: see `SPEC.md` §7.1.
 - FR-4.6 `POST /2/tweets` with text and `media_ids` if present.
 - FR-4.7 On HTTP 2xx: store the X post ID, set `_srl_status = sent`, `_srl_sent_at`, write a log row.
 - FR-4.8 On HTTP 429 or 5xx: reschedule with backoff (5 min, 15 min, 60 min), maximum 3 retries, then `failed`.
@@ -165,7 +187,7 @@ social-relay/
   readme.txt                WordPress.org format, even if never submitted
 ```
 
-- OAuth 1.0a signing: implement HMAC-SHA1 signing in `class-x-provider.php` (about 80 lines). Do not add a library. Test the signer against the published X signing example (**[UNVERIFIED]** that the example is still in the docs; if removed, use the RFC 5849 test vector).
+- OAuth 1.0a signing: implement HMAC-SHA1 signing in `class-x-provider.php` (about 80 lines). Do not add a library. Test the signer against the **RFC 5849 §3.4.1.1 test vector**. *Amendment 2, was [UNVERIFIED]:* X's published signing example was **not located** on `docs.x.com` on 2026-09-05, so the fallback this line already named is what shipped — and it is **[VERIFIED]**, in that the signer reproduces the RFC's published signature base string exactly and its HMAC-SHA1 step cross-checks against an independent implementation. `OPENQUESTIONS.md` **OQ-12**.
 - All HTTP through `wp_remote_post()` / `wp_remote_get()`. This makes every call mockable with the `pre_http_request` filter in tests.
 - Provider interface: `send( PostPayload $payload ): SendResult`. `PostPayload` carries title, permalink, image path or null, prefix, suffix. Adding Bluesky later is one new class.
 
@@ -208,12 +230,12 @@ Write this diagram, kept current, into `README.md`. Every transition MUST have a
 - Nonces on every form and every AJAX action. Capability `manage_options` for settings; `edit_post` for the meta box.
 - `$wpdb->prepare()` on every query. Add a test that greps for raw `$wpdb->query(` with interpolated variables and fails the build.
 - Sanitize every input; escape every output (`esc_html`, `esc_attr`, `esc_url`).
-- The plugin makes outbound requests to `api.x.com` and `upload.x.com` only. Hard-code the hosts. Do not accept a host from settings.
+- The plugin makes outbound requests to `api.x.com` and `upload.x.com` only. Hard-code the hosts. Do not accept a host from settings. **⚠ Corrected by amendment 2 — do not implement this line as written.** The allowlist is **`api.x.com` alone**. OQ-13 proved the entire flow, media upload included, against that host without ever contacting `upload.x.com`, which is the legacy v1.1 host that §1.3 forbids building on — so allowlisting it would permit exactly the call this brief prohibits. Binding form is `SPEC.md` **INV-3**; the departure is recorded as `SPEC.md` §17 **OPEN-7**. The instruction is left visible rather than deleted because it is what the brief asked for.
 - `uninstall.php` removes options, post meta, the log table, and scheduled events.
 
 ## 9. Compatibility floor
 
-- WordPress 6.5+, PHP 8.1+ (confirm in Phase 0; the owner may want 8.2+).
+- WordPress 6.5+, **PHP 8.2+**. *Amendment 2:* the floor was "8.1+ (confirm in Phase 0)"; **OQ-5** resolved it to **8.2**, on the owner's decision and on the evidence that PHP 8.1's security support ended 2025-12-31 while PHP ≥ 8.2 covers 61.29% of WordPress installs. `SPEC.md` §17 **OPEN-10**. Note that 8.2 itself leaves security support on 2026-12-31, so a later raise to 8.3 is planned rather than surprising — `VERSIONING.md`.
 - Classic editor and block editor.
 - Must not break when WP-Cron is disabled and no system cron exists (posts stay `scheduled`; the health panel warns).
 
@@ -224,7 +246,7 @@ Write this diagram, kept current, into `README.md`. Every transition MUST have a
 - **Unit and integration tests:** PHPUnit with the WordPress test suite via `wp-env`. Mock X with `pre_http_request`. Fixtures for: 2xx create, 2xx media, 429, 500, 401, 403, duplicate error, malformed JSON, timeout.
 - **Coverage target:** every FR in Section 4 has a named test. Every state transition in Section 7 has a test. Report coverage; do not set a percentage target.
 - **Static analysis:** PHPStan level 6 and PHPCS with the WordPress Coding Standards ruleset. Both run in CI and block merge.
-- **CI:** GitHub Actions on push and PR. Matrix: PHP 8.1 and latest; WP 6.5 and latest.
+- **CI:** GitHub Actions on push and PR. Matrix: **PHP 8.2** and latest; WP 6.5 and latest. *Amendment 2:* was "PHP 8.1 and latest", which follows the floor OQ-5 settled.
 - **Local acceptance (Phase 6):** `wp-env` site with a real X sandbox app on a throwaway account. A scripted checklist in `INSTRUCTIONS.md`: publish with delay 2 min → post appears; publish and trash within the delay → nothing posts; publish with no featured image → text post appears; kill credentials → failed with notice; double-fire the cron event by hand → one post.
 - **Real-world acceptance (Phase 10):** run on the owner's staging site for 7 days with real cron. Reconcile the usage counter against the X Developer Console.
 

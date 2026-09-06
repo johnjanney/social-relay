@@ -46,6 +46,18 @@ Every commit that changes behaviour adds its line here in the same commit.
   T-441 through T-449. §17 gains **OPEN-14** for visibility. Without this the spec
   contradicted itself: §7.6 specified a feature §1 excluded, and §0 makes the spec
   the implementation contract. Found by review on PR #2.
+- `PROJECTBRIEF.md` amended again, to **v0.3**. **Amendment 2** sweeps every
+  evidence label in the document against what Phase 0 actually established: the
+  media-upload auth question becomes `[MEASURED]` (OQ-2, live HTTP 200), the 280
+  character limit becomes `[VERIFIED]` (OQ-3), the signing-example question is
+  settled via the RFC 5849 fallback (OQ-12), the PHP floor reads 8.2 and the CI
+  matrix follows (OQ-5). The Project-membership claim is **downgraded** from
+  `[VERIFIED]` to `[UNVERIFIED]` (OQ-19), because correcting only the labels that
+  improved would have left the one misleading claim standing. Two labels stay
+  `[UNVERIFIED]` on purpose — they are unknown, not stale (OQ-1b, OQ-15). §8's
+  `upload.x.com` allowlist is annotated inline rather than rewritten, since
+  `SPEC.md` INV-3 already contradicts it and the original instruction is worth
+  keeping visible. No requirement changed.
 
 ## [0.1.0] - 2026-09-05
 

@@ -10,7 +10,7 @@ Approved with the open items in §17 noted, and with three decisions recorded at
 **Spec version:** 1.0
 **Date:** 2026-09-05
 **Review:** `reviews/spec-review-1.md` — 4 blocker, 13 major, 11 minor, 1 question. Every finding was accepted; none was declined. The response is summarised in §19.
-**Inputs:** `PROJECTBRIEF.md` v0.2 (amendment 1), `DECISIONS.md` ADR-001..005 (all accepted), `OPENQUESTIONS.md` (no blocking row open).
+**Inputs:** `PROJECTBRIEF.md` v0.3 (amendments 1 and 2), `DECISIONS.md` ADR-001..005 (all accepted), `OPENQUESTIONS.md` (no blocking row open).
 
 > **Specification Gate — PASSED 2026-09-05.** The marker is at the top of this file. Changes from here on are amendments to an approved specification, and each one says so.
 
