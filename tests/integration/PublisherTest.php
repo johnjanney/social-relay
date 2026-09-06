@@ -29,6 +29,13 @@ class PublisherTest extends WP_UnitTestCase {
 	 */
 	private array $responses = array();
 
+	/**
+	 * Fail the test on any request with no queued response.
+	 *
+	 * @var bool
+	 */
+	private bool $strict_requests = false;
+
 	public function set_up(): void {
 		parent::set_up();
 
@@ -67,6 +74,13 @@ class PublisherTest extends WP_UnitTestCase {
 		);
 
 		if ( empty( $this->responses ) ) {
+			// Deliberately still a success: most tests queue nothing and expect
+			// the happy path. But tests that care about call counts assert
+			// assertCount() on $this->requests, and $strict_requests below
+			// turns an unqueued call into a failure where that matters.
+			if ( $this->strict_requests ) {
+				$this->fail( 'Unexpected HTTP request to ' . $url . ' with no queued response.' );
+			}
 			return $this->ok_create();
 		}
 
@@ -155,6 +169,28 @@ class PublisherTest extends WP_UnitTestCase {
 		SRL_Publisher::run( $post_id );
 
 		$this->assertCount( 1, $this->requests, 'The second firing must make no API call at all.' );
+	}
+
+	/**
+	 * The concurrent case the compare-and-swap actually exists for.
+	 *
+	 * Running run() twice in sequence proves little: the second call is
+	 * blocked because the status is already `sent`, and it would pass even if
+	 * claim() were a plain update_post_meta(). This drives the claim itself
+	 * from a status another worker has already taken.
+	 */
+	public function test_second_worker_cannot_claim_a_send_in_flight(): void {
+		$post_id = $this->scheduled_post();
+
+		// Worker A claims and is mid-send.
+		$this->assertSame( 'claimed', SRL_Publisher::claim( $post_id ) );
+
+		// Worker B arrives while the status is `sending`.
+		$this->assertSame( 'taken', SRL_Publisher::claim( $post_id ) );
+
+		SRL_Publisher::run( $post_id );
+
+		$this->assertEmpty( $this->requests, 'a worker that did not win the claim must make no API call' );
 	}
 
 	/** T-402 */
@@ -265,14 +301,53 @@ class PublisherTest extends WP_UnitTestCase {
 		$this->assertFalse( SRL_Scheduler::has_pending_send( $post_id ) );
 	}
 
-	/** T-470 */
+	/**
+	 * T-470
+	 *
+	 * Asserts the REASON, not just that it failed. The first version checked
+	 * only STATUS_FAILED, and because `auth` is terminal too it passed happily
+	 * while the reason was wrong -- which is precisely the bug the Phase 7
+	 * review found: X returns duplicate-content rejections as HTTP 403, the
+	 * 401/403 arm ran first, and the entire duplicate safety net was dead code.
+	 */
 	public function test_duplicate_on_first_attempt_fails_with_reason_duplicate(): void {
-		$this->responses = array( $this->status( 403, '{"detail":"You are not allowed to create a duplicate status."}' ) );
+		$this->responses = array( $this->status( 403, '{"detail":"You are not allowed to create a Tweet with duplicate content."}' ) );
 		$post_id         = $this->scheduled_post();
 
 		SRL_Publisher::run( $post_id );
 
 		$this->assertSame( SRL_Post_Meta::STATUS_FAILED, SRL_Post_Meta::get_status( $post_id ) );
+		$this->assertSame(
+			'duplicate',
+			get_post_meta( $post_id, SRL_Post_Meta::META_LAST_ERROR, true ),
+			'a 403 duplicate must not be reported as an auth failure'
+		);
+	}
+
+	/**
+	 * A genuine 401 must still read as auth, so the tightened duplicate matcher
+	 * has not simply swallowed everything.
+	 */
+	public function test_genuine_auth_failure_is_still_reported_as_auth(): void {
+		$this->responses = array( $this->status( 401, '{"title":"Unauthorized","detail":"Unauthorized"}' ) );
+		$post_id         = $this->scheduled_post();
+
+		SRL_Publisher::run( $post_id );
+
+		$this->assertSame( 'auth', get_post_meta( $post_id, SRL_Post_Meta::META_LAST_ERROR, true ) );
+	}
+
+	/**
+	 * An unrelated error body that merely mentions the word must not be
+	 * mistaken for a duplicate-content rejection.
+	 */
+	public function test_unrelated_body_mentioning_duplicate_is_not_a_duplicate(): void {
+		$this->responses = array( $this->status( 401, '{"detail":"Your app has a duplicate callback URL registered."}' ) );
+		$post_id         = $this->scheduled_post();
+
+		SRL_Publisher::run( $post_id );
+
+		$this->assertSame( 'auth', get_post_meta( $post_id, SRL_Post_Meta::META_LAST_ERROR, true ) );
 	}
 
 	/**

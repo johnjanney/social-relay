@@ -40,6 +40,31 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ### Fixed
 
+Phase 7 code review, all 16 findings applied:
+
+- **Blocker:** `truncate()` measured with literal weights while `compose()`
+  budgeted with URL weights, so a truncated title overflowed X's 280 limit.
+  An ordinary headline naming four products by domain composed to 320 — a
+  terminal HTTP 400 and a burned paid call. `compose()` now measures the
+  assembled string, not the parts.
+- A 403 duplicate-content rejection was classified as `auth`, making the entire
+  duplicate safety net dead code and misdirecting the owner to their credentials
+  on a request where a post may have gone live.
+- Three of the four paths into `failed` never raised the admin notice — exactly
+  the failures that happen while nobody is watching.
+- The failure notice could never be dismissed; it now carries a nonced link that
+  works without JavaScript.
+- `reconcile()` could starve: the batch filled with healthy, newest-first posts
+  while genuinely stuck older ones were never examined, and trashed posts were
+  invisible to it entirely.
+- `run()` could overwrite a terminal status with `cancelled`, re-opening the
+  duplicate-post guard.
+- The retry budget was never reset when a failed post was republished.
+- Per-post delay and switch were ignored in the block editor.
+- No size guard before a billed image upload; the multipart filename was
+  interpolated unescaped; `x-rate-limit-reset` was ignored; `sanitize()` could
+  double-encrypt; uninstall left secrets behind on multisite.
+
 - The one-minute cron schedule was registered on `plugins_loaded`, which does not
   fire for the plugin being activated, so the heartbeat was never scheduled. The
   cron health panel could never turn green and the reconciliation scan never ran.

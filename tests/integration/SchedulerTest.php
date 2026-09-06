@@ -216,12 +216,23 @@ class SchedulerTest extends WP_UnitTestCase {
 		$post_id = $this->publish_a_draft();
 		$this->assertTrue( SRL_Scheduler::has_pending_send( $post_id ) );
 
-		// Clear using the string form, as an admin request would supply it.
-		wp_clear_scheduled_hook( SRL_Scheduler::SEND_HOOK, SRL_Scheduler::event_args( (string) $post_id ) );
+		// The raw string form, as an admin request supplies it and as a call
+		// site that forgot the cast would pass it. Calling event_args() on both
+		// sides would have made the two arrays identical by construction and
+		// proved nothing.
+		wp_clear_scheduled_hook( SRL_Scheduler::SEND_HOOK, array( (string) $post_id ) );
+
+		$this->assertTrue(
+			SRL_Scheduler::has_pending_send( $post_id ),
+			'documents the WordPress behaviour: md5(serialize()) makes a string id a different event'
+		);
+
+		// The plugin's own helper normalises, so the event really is cleared.
+		SRL_Scheduler::clear_send( (string) $post_id );
 
 		$this->assertFalse(
 			SRL_Scheduler::has_pending_send( $post_id ),
-			'event_args() must normalise to int so a string post id still matches.'
+			'clear_send() must normalise whatever it is handed'
 		);
 	}
 

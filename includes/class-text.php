@@ -317,22 +317,34 @@ class SRL_Text {
 		}
 
 		$emoji = self::emoji_pattern();
-		$parts = preg_split( '/(' . $emoji . ')/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY );
-
-		if ( ! is_array( $parts ) ) {
-			return array( $text );
-		}
-
 		$units = array();
-		foreach ( $parts as $part ) {
-			if ( preg_match( '/^' . $emoji . '$/u', $part ) ) {
-				$units[] = $part;
+
+		// URLs first, and whole. A URL is indivisible: half a URL is not a
+		// cheaper URL, it is broken text that X charges literally.
+		foreach ( self::segment( $text ) as $segment ) {
+			if ( $segment['is_url'] ) {
+				$units[] = $segment['text'];
 				continue;
 			}
+
+			$parts = preg_split( '/(' . $emoji . ')/u', $segment['text'], -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY );
+
+			if ( ! is_array( $parts ) ) {
+				$units[] = $segment['text'];
+				continue;
+			}
+
+			foreach ( $parts as $part ) {
+				if ( preg_match( '/^' . $emoji . '$/u', $part ) ) {
+					$units[] = $part;
+					continue;
+				}
+
 				$matches = array();
-			if ( preg_match_all( '/\X/u', $part, $matches ) ) {
-				foreach ( $matches[0] as $cluster ) {
-					$units[] = $cluster;
+				if ( preg_match_all( '/\X/u', $part, $matches ) ) {
+					foreach ( $matches[0] as $cluster ) {
+						$units[] = $cluster;
+					}
 				}
 			}
 		}
@@ -347,7 +359,13 @@ class SRL_Text {
 	 * @return int
 	 */
 	private static function weigh_unit( string $unit ): int {
-		return self::weigh_plain( $unit );
+		// MUST use the same function compose() budgets with. weigh_plain()
+		// measured every character literally while compose() charged 23 per
+		// URL, so any domain-shaped token surviving the cut added weight the
+		// budget never reserved: an ordinary headline naming four products by
+		// domain measured 320 against a limit of 280, and X answers that with
+		// an HTTP 400 the error matrix treats as terminal.
+		return self::weighted_length( $unit );
 	}
 
 	/**
@@ -408,27 +426,58 @@ class SRL_Text {
 		$suffix = trim( $suffix );
 		$title  = trim( $title );
 
-		$budget = self::MAX_WEIGHTED - self::URL_WEIGHT - 1; // 1 for the newline.
+		// Measure the permalink rather than assuming 23. X shortens a link
+		// only when its host is valid; a permalink whose host it rejects is
+		// charged literally, and assuming 23 there under-reserved by the
+		// difference.
+		$permalink_weight = '' === $permalink ? 0 : self::weighted_length( $permalink );
+		$separator        = '' === $permalink ? 0 : 1;
+
+		$budget = self::MAX_WEIGHTED - $permalink_weight - $separator;
 
 		$fixed = self::weighted_length( $prefix ) + self::weighted_length( $suffix );
 		if ( '' !== $prefix ) {
-			++$fixed; // Joining space.
+			++$fixed;
 		}
 		if ( '' !== $suffix ) {
-			++$fixed; // Joining space.
+			++$fixed;
 		}
 
-		$title_budget = $budget - $fixed;
-		if ( $title_budget < 1 ) {
-			// Only reachable if the bounds in SPEC.md section 3 were not
-			// enforced. Keep the URL rather than the decoration.
-			$title_budget = 0;
-		}
+		$title_budget = max( 0, $budget - $fixed );
 
 		if ( self::weighted_length( $title ) > $title_budget ) {
 			$title = self::truncate( $title, $title_budget );
 		}
 
+		$out = self::assemble( $prefix, $title, $suffix, $permalink );
+
+		// The guard SPEC section 7.4 step 1 actually asks for: measure the
+		// assembled string, not the parts. Budget arithmetic that is correct
+		// in isolation can still be wrong once the pieces are joined, and the
+		// only honest check is on the thing that gets sent. Bounded and
+		// terminating: each pass removes at least one weighted unit, and an
+		// empty title exits.
+		$guard = 0;
+		while ( self::weighted_length( $out ) > self::MAX_WEIGHTED && '' !== $title && $guard < 400 ) {
+			--$title_budget;
+			$title = $title_budget > 0 ? self::truncate( $title, $title_budget ) : '';
+			$out   = self::assemble( $prefix, $title, $suffix, $permalink );
+			++$guard;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Join the parts, omitting any that are empty.
+	 *
+	 * @param string $prefix    Optional prefix.
+	 * @param string $title     Title, possibly truncated.
+	 * @param string $suffix    Optional suffix.
+	 * @param string $permalink Permalink, or empty for a post with no link.
+	 * @return string
+	 */
+	private static function assemble( string $prefix, string $title, string $suffix, string $permalink ): string {
 		$pieces = array();
 		foreach ( array( $prefix, $title, $suffix ) as $piece ) {
 			if ( '' !== $piece ) {
@@ -437,6 +486,11 @@ class SRL_Text {
 		}
 
 		$line = trim( implode( ' ', $pieces ) );
+
+		// A test post has no link and must not end with a stray newline.
+		if ( '' === $permalink ) {
+			return $line;
+		}
 
 		return '' === $line ? $permalink : $line . "\n" . $permalink;
 	}

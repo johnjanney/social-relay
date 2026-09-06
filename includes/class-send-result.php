@@ -81,6 +81,13 @@ class SRL_Send_Result {
 	public string $image_omitted_reason = '';
 
 	/**
+	 * Seconds to wait before retrying, when the server said so.
+	 *
+	 * @var int|null
+	 */
+	public ?int $retry_after = null;
+
+	/**
 	 * Media id used or obtained, for reuse on a retry.
 	 *
 	 * @var string|null

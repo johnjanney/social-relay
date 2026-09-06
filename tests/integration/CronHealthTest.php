@@ -58,30 +58,64 @@ class CronHealthTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Demonstrates the observer effect. On a site that has not set DISABLE_WP_CRON, loading
-	 * a wp-admin page runs the heartbeat itself, so a fresh timestamp proves
-	 * nothing about whether cron runs when nobody is looking. The panel must
-	 * never report green in that case, however recent the heartbeat is.
+	 * The observer effect, exercised rather than asserted by inspection.
+	 *
+	 * On a site that has not set DISABLE_WP_CRON, loading any wp-admin page
+	 * runs the heartbeat itself, so a fresh timestamp proves nothing about
+	 * whether cron runs when nobody is looking. The panel must never report
+	 * green in that case, however recent the heartbeat is.
+	 *
+	 * The first version of this test added a filter no production code read,
+	 * then asserted the opposite of its own name, leaving the state most real
+	 * sites are in with zero coverage.
 	 */
 	public function test_unverified_when_wp_cron_is_visitor_triggered(): void {
 		SRL_Cron_Health::beat();
-		$this->assertSame( 'ok', SRL_Cron_Health::status() );
+		$this->assertSame( 'ok', SRL_Cron_Health::status(), 'precondition: a fresh heartbeat' );
 
-		add_filter( 'srl_test_force_wp_cron_enabled', '__return_true' );
+		SRL_Cron_Health::$wp_cron_disabled_override = false;
 
-		// Simulate DISABLE_WP_CRON being absent by checking the branch directly:
-		// the constant cannot be undefined once set, so assert the rule instead.
-		$this->assertTrue(
-			SRL_Cron_Health::wp_cron_disabled(),
-			'This environment has DISABLE_WP_CRON set; the unverified branch is asserted by inspection of status().'
+		$this->assertSame(
+			'unverified',
+			SRL_Cron_Health::status(),
+			'a fresh heartbeat must not read as green when the page load could have caused it'
 		);
+		$this->assertFalse( SRL_Cron_Health::is_healthy() );
 
-		remove_filter( 'srl_test_force_wp_cron_enabled', '__return_true' );
+		SRL_Cron_Health::$wp_cron_disabled_override = null;
 	}
 
-	public function test_stale_threshold_is_a_single_named_constant(): void {
-		// OQ-18 may force this to 15 minutes if Hostinger cannot run cron every
-		// minute. One constant is one edit.
-		$this->assertSame( 300, SRL_Cron_Health::STALE_AFTER );
+	/**
+	 * Whichever way the panel reads, the settings page must render it.
+	 */
+	public function test_settings_page_renders_each_cron_state(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$expectations = array(
+			'unverified' => 'triggered by visitors',
+			'never'      => 'has not run',
+			'ok'         => 'Real cron is running',
+		);
+
+		foreach ( $expectations as $state => $needle ) {
+			if ( 'unverified' === $state ) {
+				SRL_Cron_Health::$wp_cron_disabled_override = false;
+				SRL_Cron_Health::beat();
+			} elseif ( 'never' === $state ) {
+				SRL_Cron_Health::$wp_cron_disabled_override = true;
+				delete_option( SRL_Cron_Health::OPTION );
+			} else {
+				SRL_Cron_Health::$wp_cron_disabled_override = true;
+				SRL_Cron_Health::beat();
+			}
+
+			ob_start();
+			srl_plugin()->render_settings_page();
+			$html = (string) ob_get_clean();
+
+			$this->assertStringContainsString( $needle, $html, "state: {$state}" );
+		}
+
+		SRL_Cron_Health::$wp_cron_disabled_override = null;
 	}
 }

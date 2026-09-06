@@ -49,6 +49,11 @@ class SRL_X_Provider implements SRL_Provider {
 	public const ALLOWED_MIME = array( 'image/jpeg', 'image/png', 'image/webp' );
 
 	/**
+	 * Maximum bytes X accepts for media_category=tweet_image.
+	 */
+	public const MAX_IMAGE_BYTES = 5242880;
+
+	/**
 	 * Request timeouts in seconds. WordPress defaults to 5, which is too short
 	 * for an image upload on a slow connection.
 	 */
@@ -250,6 +255,19 @@ class SRL_X_Provider implements SRL_Provider {
 		$result->http_status   = $status;
 		$result->error_message = $body;
 
+		// A 429 usually carries the moment the window opens. Retrying at 5 and
+		// 15 minutes inside a 15-minute limit burns two retries and two billed
+		// requests before it can possibly succeed.
+		$reset = wp_remote_retrieve_header( $response, 'x-rate-limit-reset' );
+		if ( is_string( $reset ) && ctype_digit( $reset ) ) {
+			$result->retry_after = (int) $reset - time();
+		} else {
+			$retry_after = wp_remote_retrieve_header( $response, 'retry-after' );
+			if ( is_string( $retry_after ) && ctype_digit( $retry_after ) ) {
+				$result->retry_after = (int) $retry_after;
+			}
+		}
+
 		if ( $status >= 200 && $status < 300 ) {
 			$data = json_decode( $body, true );
 			$id   = is_array( $data ) && isset( $data['data']['id'] ) ? (string) $data['data']['id'] : '';
@@ -275,12 +293,17 @@ class SRL_X_Provider implements SRL_Provider {
 			$result->error_code = SRL_Send_Result::ERROR_SERVER;
 			return $result;
 		}
-		if ( 401 === $status || 403 === $status ) {
-			$result->error_code = SRL_Send_Result::ERROR_AUTH;
-			return $result;
-		}
+		// Duplicate BEFORE auth. X returns duplicate-content rejections as
+		// HTTP 403, so testing 401/403 first made ERROR_DUPLICATE unreachable
+		// and took the whole SPEC 9.3 safety net with it -- while telling the
+		// owner their credentials were at fault on a request where they were
+		// fine and a post may be live on their timeline.
 		if ( self::body_is_duplicate( $body ) ) {
 			$result->error_code = SRL_Send_Result::ERROR_DUPLICATE;
+			return $result;
+		}
+		if ( 401 === $status || 403 === $status ) {
+			$result->error_code = SRL_Send_Result::ERROR_AUTH;
 			return $result;
 		}
 
@@ -295,7 +318,11 @@ class SRL_X_Provider implements SRL_Provider {
 	 * @return bool
 	 */
 	public static function body_is_duplicate( string $body ): bool {
-		return (bool) preg_match( '/duplicate/i', $body );
+		// Anchored on X's phrasing rather than the bare word, so an unrelated
+		// error body that happens to mention "duplicate" is not swallowed and
+		// misreported as a duplicate-content rejection.
+		return (bool) preg_match( '/duplicate\s+(content|status|tweet|post)/i', $body )
+			|| (bool) preg_match( '/(tweet|post|status)\s+with\s+duplicate/i', $body );
 	}
 
 	/**
@@ -321,6 +348,17 @@ class SRL_X_Provider implements SRL_Provider {
 			return $out;
 		}
 
+		// Refuse before the call, not after. An oversized upload is a real,
+		// billed, counted request that X rejects, and the failure would be
+		// recorded as an opaque http_400 with no hint that size was the cause.
+		// It also holds the file plus its multipart copy in memory inside a
+		// cron request.
+		$size = (int) filesize( $path );
+		if ( $size > self::MAX_IMAGE_BYTES ) {
+			$out['reason'] = sprintf( 'image_too_large: %d bytes, limit %d', $size, self::MAX_IMAGE_BYTES );
+			return $out;
+		}
+
 		$bytes = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a local file the site already owns; WP_Filesystem is for writes and for remote transports.
 		if ( false === $bytes ) {
 			$out['reason'] = 'unreadable_file';
@@ -339,7 +377,14 @@ class SRL_X_Provider implements SRL_Provider {
 			array( 'media_category' => 'tweet_image' ),
 			array(
 				'name'     => 'media',
-				'filename' => basename( $path ),
+				// A fixed name, derived from the MIME type. The real filename
+				// carries no meaning to X, and get_attached_file() returns
+				// whatever _wp_attached_file holds -- which importers, CLI
+				// tools and other plugins set directly. A quote or a newline
+				// in it would terminate the quoted string or inject a header
+				// line, and a non-ASCII name is not valid in a quoted
+				// filename at all.
+				'filename' => 'image.' . self::extension_for( $mime ),
 				'type'     => $mime,
 				'bytes'    => $bytes,
 			),
@@ -387,6 +432,23 @@ class SRL_X_Provider implements SRL_Provider {
 
 		$out['media_id'] = (string) $data['data']['id'];
 		return $out;
+	}
+
+	/**
+	 * File extension for an allowed MIME type.
+	 *
+	 * @param string $mime MIME type.
+	 * @return string
+	 */
+	private static function extension_for( string $mime ): string {
+		switch ( $mime ) {
+			case 'image/jpeg':
+				return 'jpg';
+			case 'image/webp':
+				return 'webp';
+			default:
+				return 'png';
+		}
 	}
 
 	/**

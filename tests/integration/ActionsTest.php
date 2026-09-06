@@ -270,6 +270,46 @@ class ActionsTest extends WP_UnitTestCase {
 		$this->assertSame( 'malformed_response', $result['message'] );
 	}
 
+	/**
+	 * The handler must be inert without a nonce, and inert from a status that
+	 * is not sent or failed. The first version of the repost test only checked
+	 * that the rendered HTML contained the nonce field name and the string
+	 * "confirm(" -- it never invoked handle_action() at all, and would have
+	 * passed unchanged if the handler had been deleted.
+	 */
+	public function test_cancel_is_inert_without_a_nonce(): void {
+		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		_set_cron_array( array() );
+		SRL_Post_Meta::set_status( (int) $post_id, SRL_Post_Meta::STATUS_SCHEDULED );
+		SRL_Scheduler::schedule_send( (int) $post_id, time() + 3600 );
+
+		unset( $_POST[ SRL_Post_Meta::NONCE_FIELD ] );
+		$_POST['srl_action'] = 'cancel';
+
+		SRL_Post_Meta::handle_action( (int) $post_id );
+
+		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
+		$this->assertTrue( SRL_Scheduler::has_pending_send( (int) $post_id ) );
+	}
+
+	/**
+	 * A repost must clear the stored media id, so a deliberate second post
+	 * pays for a fresh upload rather than silently reusing an expiring one.
+	 */
+	public function test_repost_clears_the_stored_media_id(): void {
+		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		_set_cron_array( array() );
+		SRL_Post_Meta::set_status( (int) $post_id, SRL_Post_Meta::STATUS_FAILED );
+		update_post_meta( $post_id, SRL_Post_Meta::META_MEDIA_ID, 'old-media-id' );
+		update_post_meta( $post_id, SRL_Post_Meta::META_MEDIA_UPLOADED_AT, time() );
+
+		$this->submit( 'repost' );
+		SRL_Post_Meta::handle_action( (int) $post_id );
+
+		$this->assertSame( '', get_post_meta( $post_id, SRL_Post_Meta::META_MEDIA_ID, true ) );
+		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
+	}
+
 	/** T-121 */
 	public function test_test_post_writes_log_row_with_post_id_zero(): void {
 		SRL_Log::write( SRL_Log::EVENT_TEST, 0, 201, '1', 'Test post sent.' );

@@ -79,6 +79,13 @@ class SRL_Post_Meta {
 	public static function fail( int $post_id, string $reason ): void {
 		self::set_status( $post_id, self::STATUS_FAILED );
 		update_post_meta( $post_id, self::META_LAST_ERROR, mb_substr( $reason, 0, 500 ) );
+
+		// The notice is raised here, not at each call site. Three of the four
+		// paths into `failed` -- schedule_failed, stalled and event_lost --
+		// set the status and wrote the log row and never raised it, so exactly
+		// the failures that happen while nobody is watching were the ones that
+		// stayed silent. Putting it here means no future path can forget.
+		SRL_Notices::record_failure( $post_id );
 	}
 
 	/**
@@ -170,10 +177,101 @@ class SRL_Post_Meta {
 			// Out of range: keep the default rather than silently clamping to
 			// a value the author did not choose.
 			delete_post_meta( $post_id, self::META_DELAY_OVERRIDE );
+			self::reconcile_after_save( $post_id );
 			return;
 		}
 
 		update_post_meta( $post_id, self::META_DELAY_OVERRIDE, $minutes );
+		self::reconcile_after_save( $post_id );
+	}
+
+	/**
+	 * Re-evaluate scheduling now that the meta box fields have landed.
+	 *
+	 * In the block editor -- the default since WordPress 5.0 -- publishing
+	 * happens over the REST API, which carries no $_POST and no meta box
+	 * nonce, and the meta box's own fields arrive afterwards in a separate
+	 * post.php?meta-box-loader=1 request. By then transition_post_status has
+	 * already run and scheduled with the site default.
+	 *
+	 * The consequences were not cosmetic: an author who typed 5 in "Delay for
+	 * this post" got 60, and an author on a site whose master switch is off who
+	 * ticked "Post to X" got nothing scheduled at all, with no feedback that
+	 * the tick was ignored. Only the disable direction was rescued, by the
+	 * re-read in SRL_Publisher::run().
+	 *
+	 * This is the seam where the meta is finally known, so it is where the
+	 * decision is revisited.
+	 *
+	 * @param int $post_id Post id.
+	 * @return void
+	 */
+	private static function reconcile_after_save( int $post_id ): void {
+		$post = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
+			return;
+		}
+
+		$status = self::get_status( $post_id );
+
+		// Already sent, sending, failed or deliberately cancelled: leave it be.
+		if ( ! in_array( $status, array( self::STATUS_NONE, self::STATUS_SCHEDULED ), true ) ) {
+			return;
+		}
+
+		$wanted = '1' === (string) get_post_meta( $post_id, self::META_ENABLED, true );
+
+		if ( ! $wanted ) {
+			if ( self::STATUS_SCHEDULED === $status ) {
+				SRL_Scheduler::cancel( $post_id, 'Per-post switch turned off after publishing.' );
+			}
+			return;
+		}
+
+		// The post should go out. Recompute the time from the stored meta and
+		// reschedule, so a delay override typed in the editor is honoured
+		// whichever editor sent it.
+		$when = (int) $post->post_date_gmt ? strtotime( $post->post_date_gmt . ' UTC' ) : time();
+		$when = ( is_int( $when ) ? $when : time() ) + self::stored_delay_for( $post_id );
+
+		if ( self::STATUS_SCHEDULED === $status ) {
+			$existing = (int) get_post_meta( $post_id, self::META_SCHEDULED_AT, true );
+
+			// Within a minute of the intended time is close enough; churning
+			// the cron array on every autosave would be worse than the drift.
+			if ( abs( $existing - $when ) <= MINUTE_IN_SECONDS ) {
+				return;
+			}
+
+			SRL_Scheduler::clear_send( $post_id );
+		} elseif ( null !== SRL_Scheduler::guard( $post ) ) {
+			// Not schedulable for some other reason.
+			return;
+		}
+
+		update_post_meta( $post_id, self::META_SCHEDULED_AT, $when );
+		self::set_status( $post_id, self::STATUS_SCHEDULED );
+
+		if ( SRL_Scheduler::schedule_send( $post_id, $when ) ) {
+			SRL_Log::write( SRL_Log::EVENT_SCHEDULED, $post_id, null, null, 'Rescheduled from the editor.', 'x', $when );
+		}
+	}
+
+	/**
+	 * The delay for a post, read from stored meta only.
+	 *
+	 * @param int $post_id Post id.
+	 * @return int Seconds.
+	 */
+	private static function stored_delay_for( int $post_id ): int {
+		$override = get_post_meta( $post_id, self::META_DELAY_OVERRIDE, true );
+
+		if ( '' !== $override ) {
+			return SRL_Settings::resolve_delay( absint( $override ), 'minutes' );
+		}
+
+		return SRL_Settings::delay_seconds();
 	}
 
 	/**

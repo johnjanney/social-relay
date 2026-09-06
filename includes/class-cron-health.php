@@ -116,11 +116,27 @@ class SRL_Cron_Health {
 	}
 
 	/**
+	 * Test-only override for wp_cron_disabled().
+	 *
+	 * DISABLE_WP_CRON is a constant and the test environment always defines it
+	 * as true, so without a seam the `unverified` branch -- the state most
+	 * real sites are actually in, and the whole reason this panel has three
+	 * states rather than two -- could never be exercised. Null in production.
+	 *
+	 * @var bool|null
+	 */
+	public static ?bool $wp_cron_disabled_override = null;
+
+	/**
 	 * Whether the site has handed cron over to a real scheduler.
 	 *
 	 * @return bool
 	 */
 	public static function wp_cron_disabled(): bool {
+		if ( null !== self::$wp_cron_disabled_override ) {
+			return self::$wp_cron_disabled_override;
+		}
+
 		return defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
 	}
 

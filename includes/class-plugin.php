@@ -65,6 +65,7 @@ class SRL_Plugin {
 		add_action( 'admin_post_srl_send_test', array( $this, 'handle_test_post' ) );
 		add_action( 'admin_post_srl_check_credentials', array( $this, 'handle_check_credentials' ) );
 		add_action( 'admin_notices', array( SRL_Notices::class, 'render' ) );
+		add_action( 'admin_post_srl_dismiss_notice', array( SRL_Notices::class, 'handle_dismiss' ) );
 	}
 
 	/**

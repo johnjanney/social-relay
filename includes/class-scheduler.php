@@ -91,10 +91,13 @@ class SRL_Scheduler {
 	/**
 	 * Clear any pending send for a post.
 	 *
-	 * @param int $post_id Post id.
+	 * Accepts a loose id on purpose: admin requests supply strings, and the
+	 * normalisation belongs here rather than at every call site.
+	 *
+	 * @param int|string $post_id Post id in any form.
 	 * @return void
 	 */
-	public static function clear_send( int $post_id ): void {
+	public static function clear_send( $post_id ): void {
 		wp_clear_scheduled_hook( self::SEND_HOOK, self::event_args( $post_id ) );
 	}
 
@@ -168,12 +171,53 @@ class SRL_Scheduler {
 		$delay = self::delay_for( $post_id );
 		$when  = time() + $delay;
 
+		// A fresh send gets a fresh budget. `failed` is deliberately in
+		// SCHEDULABLE_FROM so unpublish-then-republish is a supported retry,
+		// and without this the counter still held 4 from the previous run:
+		// the first transient 500 would then be terminal, with no hint why it
+		// did not retry.
+		delete_post_meta( $post_id, SRL_Post_Meta::META_ATTEMPTS );
+		delete_post_meta( $post_id, SRL_Post_Meta::META_LAST_ERROR );
+		delete_post_meta( $post_id, SRL_Post_Meta::META_IMAGE_OMITTED );
+		delete_post_meta( $post_id, SRL_Post_Meta::META_IMAGE_REASON );
+
 		SRL_Post_Meta::set_status( $post_id, SRL_Post_Meta::STATUS_SCHEDULED );
 		update_post_meta( $post_id, SRL_Post_Meta::META_SCHEDULED_AT, $when );
 
 		if ( self::schedule_send( $post_id, $when ) ) {
 			SRL_Log::write( SRL_Log::EVENT_SCHEDULED, $post_id, null, null, '', 'x', $when );
 		}
+	}
+
+	/**
+	 * Test-only override for is_importing().
+	 *
+	 * WP_IMPORTING is a constant, so a test that defines it poisons every
+	 * later test in the process -- which is exactly what happened, silently
+	 * skipping sixteen of them. Process isolation is not a workable
+	 * alternative here because the WordPress test suite itself emits a
+	 * constant-redefinition warning that PHPUnit turns into a fatal error in
+	 * an isolated process. A single explicit seam is the honest answer, and it
+	 * is the pattern the Phase 7 review recommended for the same problem in
+	 * SRL_Cron_Health.
+	 *
+	 * Null in production, always.
+	 *
+	 * @var bool|null
+	 */
+	public static ?bool $importing_override = null;
+
+	/**
+	 * Whether this request is a WordPress import.
+	 *
+	 * @return bool
+	 */
+	public static function is_importing(): bool {
+		if ( null !== self::$importing_override ) {
+			return self::$importing_override;
+		}
+
+		return defined( 'WP_IMPORTING' ) && WP_IMPORTING;
 	}
 
 	/**
@@ -202,8 +246,20 @@ class SRL_Scheduler {
 			return 'post_type';
 		}
 
+		// Master and per-post switches first, matching SPEC 10.3's G-4-before-G-6
+		// order. An activated-but-unconfigured install is the default state
+		// (FR-1.3), and importing 5,000 posts into one would otherwise write
+		// 5,000 log rows -- each with a get_post() to snapshot the title --
+		// explaining skips that need no explanation because the plugin is off.
+		if ( ! SRL_Settings::is_enabled() ) {
+			return 'master_switch';
+		}
+		if ( ! self::per_post_enabled( $post_id ) ) {
+			return 'post_switch';
+		}
+
 		// An importer must not spend the owner's money.
-		if ( defined( 'WP_IMPORTING' ) && WP_IMPORTING ) {
+		if ( self::is_importing() ) {
 			return 'importing';
 		}
 
@@ -218,13 +274,6 @@ class SRL_Scheduler {
 		$published = strtotime( (string) $post->post_date_gmt . ' UTC' );
 		if ( is_int( $published ) && ( time() - $published ) > self::FRESHNESS_WINDOW ) {
 			return 'stale_post';
-		}
-
-		if ( ! SRL_Settings::is_enabled() ) {
-			return 'master_switch';
-		}
-		if ( ! self::per_post_enabled( $post_id ) ) {
-			return 'post_switch';
 		}
 
 		$status = SRL_Post_Meta::get_status( $post_id );
@@ -370,27 +419,59 @@ class SRL_Scheduler {
 	 * @return int Posts resolved.
 	 */
 	public static function reconcile(): int {
+		$now = time();
+
+		// Two things this query gets right that the obvious version does not.
+		//
+		// It excludes healthy posts. Matching every `scheduled` post and
+		// taking twenty in the default date-DESC order meant that on a site
+		// with a long delay publishing more than twenty posts inside the
+		// window, the newest healthy not-yet-due posts filled the batch on
+		// every heartbeat forever, and the older posts behind them -- which,
+		// being older, are exactly the stuck ones -- were never examined.
+		//
+		// And it orders oldest-first, so the stale end drains rather than
+		// starves. `trash` is named explicitly because post_status => 'any'
+		// excludes statuses flagged exclude_from_search, so a post trashed
+		// mid-send was invisible and stayed in `sending` permanently.
 		$query = new WP_Query(
 			array(
 				'post_type'           => 'any',
-				'post_status'         => 'any',
+				'post_status'         => array( 'publish', 'draft', 'pending', 'private', 'future', 'trash' ),
 				'posts_per_page'      => self::RECONCILE_BATCH,
 				'fields'              => 'ids',
 				'no_found_rows'       => true,
 				'ignore_sticky_posts' => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Bounded to 20 rows over an indexed meta_key; the set is always small.
+				'orderby'             => 'ID',
+				'order'               => 'ASC',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Bounded to 20 rows over an indexed meta_key, and filtered to the stale set.
 				'meta_query'          => array(
+					'relation' => 'AND',
 					array(
 						'key'     => SRL_Post_Meta::META_STATUS,
 						'value'   => array( SRL_Post_Meta::STATUS_SENDING, SRL_Post_Meta::STATUS_SCHEDULED ),
 						'compare' => 'IN',
+					),
+					array(
+						'relation' => 'OR',
+						array(
+							'key'     => SRL_Post_Meta::META_SENDING_SINCE,
+							'value'   => $now - self::STALE_SENDING_AFTER,
+							'compare' => '<',
+							'type'    => 'NUMERIC',
+						),
+						array(
+							'key'     => SRL_Post_Meta::META_SCHEDULED_AT,
+							'value'   => $now - self::LOST_EVENT_AFTER,
+							'compare' => '<',
+							'type'    => 'NUMERIC',
+						),
 					),
 				),
 			)
 		);
 
 		$resolved = 0;
-		$now      = time();
 
 		foreach ( $query->posts as $post_id ) {
 			$post_id = (int) $post_id;

@@ -303,6 +303,21 @@ class SRL_Settings {
 				continue;
 			}
 
+			// Idempotent. register_setting() installs this as a
+			// sanitize_option_srl_settings filter, so it runs on EVERY
+			// admin-side update_option( 'srl_settings' ), not only on form
+			// submissions. Any future migration that reads all(), changes one
+			// key and writes it back would otherwise double-wrap the
+			// envelopes: decrypt() would return the inner srl1: string,
+			// credentials_state() would still report OK because the outer
+			// envelope is valid, and the signer would send envelope text as
+			// the consumer key -- a silent failure diagnosed as a 401, which
+			// sends the owner to regenerate keys that were never wrong.
+			if ( SRL_Crypto::STATE_ABSENT !== self::crypto()->inspect( $submitted ) ) {
+				$clean[ $key ] = $submitted;
+				continue;
+			}
+
 			$clean[ $key ] = self::crypto()->encrypt( $submitted );
 		}
 

@@ -41,9 +41,23 @@ class SRL_Publisher {
 	public static function run( int $post_id ): void {
 		$post = get_post( $post_id );
 
-		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
-			SRL_Post_Meta::set_status( $post_id, SRL_Post_Meta::STATUS_CANCELLED );
-			SRL_Log::write( SRL_Log::EVENT_CANCELLED, $post_id, null, null, 'No longer published at send time.' );
+		if ( ! $post instanceof WP_Post ) {
+			// The post is gone. Writing meta here would create an orphan row
+			// for a post id that no longer exists.
+			return;
+		}
+
+		if ( 'publish' !== $post->post_status ) {
+			// Only a scheduled send may be cancelled. Writing `cancelled`
+			// unconditionally turned a terminal state back into a schedulable
+			// one -- `cancelled` is in SCHEDULABLE_FROM -- so a second worker
+			// reaching here while the first was mid-send could overwrite
+			// `sending` or `sent`, and untrash-and-republish would then pass
+			// G-5 and pay for a second post. TR-14.
+			if ( SRL_Post_Meta::STATUS_SCHEDULED === SRL_Post_Meta::get_status( $post_id ) ) {
+				SRL_Post_Meta::set_status( $post_id, SRL_Post_Meta::STATUS_CANCELLED );
+				SRL_Log::write( SRL_Log::EVENT_CANCELLED, $post_id, null, null, 'No longer published at send time.' );
+			}
 			return;
 		}
 
@@ -271,7 +285,16 @@ class SRL_Publisher {
 
 		if ( $result->is_retryable() && $attempts <= count( self::BACKOFF ) ) {
 			$delay = self::BACKOFF[ $attempts - 1 ];
-			$when  = time() + $delay;
+
+			// If the server told us when the window opens, honour it when it
+			// is further out than our own backoff. Retrying at 5 and 15
+			// minutes inside a 15-minute rate limit spends two retries and two
+			// billed requests before it can possibly succeed.
+			if ( null !== $result->retry_after && $result->retry_after > $delay ) {
+				$delay = min( $result->retry_after, 6 * HOUR_IN_SECONDS );
+			}
+
+			$when = time() + $delay;
 
 			SRL_Post_Meta::set_status( $post_id, SRL_Post_Meta::STATUS_SCHEDULED );
 			update_post_meta( $post_id, SRL_Post_Meta::META_SCHEDULED_AT, $when );

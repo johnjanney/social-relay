@@ -104,8 +104,26 @@ class SRL_Notices {
 				$extra = ' ' . esc_html__( 'X rejected this as a duplicate on a retry, which usually means the earlier attempt did go through. Check your timeline before reposting.', 'social-relay' );
 			}
 
+			// A nonced link rather than core's is-dismissible plus JavaScript.
+			// The dismissible class only hides the element for the current
+			// page view; without a real endpoint the notice reappeared on
+			// every admin page, for every user with edit_posts, for up to
+			// fifty posts at once, and the only way to clear it was to delete
+			// the post. Administrators learn to ignore a notice like that,
+			// which would have defeated the point of raising it at all.
+			$dismiss_url = wp_nonce_url(
+				add_query_arg(
+					array(
+						'action'      => 'srl_dismiss_notice',
+						'srl_post_id' => (int) $post_id,
+					),
+					admin_url( 'admin-post.php' )
+				),
+				self::DISMISS_ACTION . '_' . (int) $post_id
+			);
+
 			printf(
-				'<div class="notice notice-error is-dismissible srl-failure-notice" data-post="%1$d"><p>%2$s%3$s <a href="%4$s">%5$s</a></p></div>',
+				'<div class="notice notice-error srl-failure-notice" data-post="%1$d"><p>%2$s%3$s <a href="%4$s">%5$s</a> &nbsp;|&nbsp; <a href="%6$s">%7$s</a></p></div>',
 				(int) $post_id,
 				sprintf(
 					/* translators: 1: post title, 2: reason */
@@ -115,9 +133,31 @@ class SRL_Notices {
 				),
 				$extra, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Built from esc_html__() above.
 				esc_url( (string) get_edit_post_link( $post_id ) ),
-				esc_html__( 'Open the post', 'social-relay' )
+				esc_html__( 'Open the post', 'social-relay' ),
+				esc_url( $dismiss_url ),
+				esc_html__( 'Dismiss', 'social-relay' )
 			);
 		}
+	}
+
+	/**
+	 * Handle the dismissal link.
+	 *
+	 * @return void
+	 */
+	public static function handle_dismiss(): void {
+		$post_id = isset( $_GET['srl_post_id'] ) ? absint( wp_unslash( $_GET['srl_post_id'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Verified on the next line.
+
+		check_admin_referer( self::DISMISS_ACTION . '_' . $post_id );
+
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			wp_die( esc_html__( 'You do not have permission to dismiss this notice.', 'social-relay' ) );
+		}
+
+		self::dismiss( $post_id );
+
+		wp_safe_redirect( wp_get_referer() ? (string) wp_get_referer() : admin_url() );
+		exit;
 	}
 
 	/**

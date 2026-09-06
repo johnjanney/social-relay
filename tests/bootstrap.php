@@ -79,4 +79,24 @@ function srl_manually_load_plugin(): void {
 }
 tests_add_filter( 'muplugins_loaded', 'srl_manually_load_plugin' );
 
+/*
+ * The WordPress test suite defines DISABLE_WP_CRON in both wp-tests-config.php
+ * and includes/bootstrap.php, which emits a redefinition warning. Harmless in a
+ * normal run, but PHPUnit converts warnings to exceptions inside a
+ * separate-process test, which turns a WordPress bug into a failure of ours.
+ * Suppressed by exact message only; everything else still surfaces.
+ */
+// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Suppresses one known WordPress test-suite warning by exact message; restored immediately after.
+set_error_handler(
+	static function ( int $errno, string $message ) {
+		if ( str_contains( $message, 'Constant DISABLE_WP_CRON already defined' ) ) {
+			return true;
+		}
+		return false;
+	},
+	E_WARNING | E_NOTICE
+);
+
 require $srl_tests_lib . '/includes/bootstrap.php';
+
+restore_error_handler();
