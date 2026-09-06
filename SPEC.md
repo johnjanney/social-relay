@@ -472,7 +472,7 @@ Requirements derived from this response:
 
 ### 8.3 Create the post — `POST /2/tweets`
 
-**[OPEN — OQ-15.]** The path is specified as `/2/tweets`. One secondary source referred to `/2/posts`. This was deliberately not probed, because creating a post costs money and publishes publicly. It is settled at Phase 6 by FR-1.5. The provider **MUST** hold the path in a single constant so the correction is one line.
+**[VERIFIED — owner-reported, 2026-09-06.]** The path is `/2/tweets`: the first post from this plugin reached X in production through it, from "Post to X now" on 0.3.1 (OQ-15, resolved). It is not **[MEASURED]** in this document's sense, because the owner reported the post on the timeline rather than pasting the response; the HTTP status and remote id were not captured. One secondary source had referred to `/2/posts`, which is why the path was held **[OPEN]** until a real post settled it. The provider still holds the path in a single constant.
 
 **Request** — `application/json`:
 
@@ -1186,7 +1186,7 @@ Rows OPEN-7 to OPEN-10 are departures from the brief that were resolved by evide
 | **OPEN-2** | X's pixel limits for `tweet_image` are not pinned. Only the 5 MB byte limit is documented. | §8.2 | Downscale on bytes alone in v1, and record the observed limit during Phase 6 acceptance. Guessing a pixel bound is worse than not enforcing one. |
 | **OPEN-3** | A post stuck in `sending` after a crash has no exit in the brief's state machine. Specified as `failed` reason `stalled` after 15 minutes, with no automatic retry. | §10.2 | Accept. Without it a crashed send is invisible forever. Not auto-retrying is deliberate: a crash mid-send is indistinguishable from a lost response, and retrying risks breaking INV-1. |
 | **OPEN-4** | FR-1.5's "Send test post" publishes publicly and costs $0.015. `GET /2/users/me` proves credentials for about $0.010 without posting. | §8.4 | **RESOLVED 2026-09-05 — owner accepted.** FR-1.5 stands unchanged and a second "Check credentials" control is added beside it as **FR-1.9**. This is an addition to the brief, made on the owner's explicit decision rather than unilaterally. |
-| **OPEN-5** | The create-post path is `/2/tweets` or `/2/posts` (OQ-15). Not probed, because it costs money and publishes. | §8.3 | Hold it in one constant; settle at Phase 6 via FR-1.5. |
+| **OPEN-5** | The create-post path is `/2/tweets` or `/2/posts` (OQ-15). Not probed, because it costs money and publishes. | §8.3 | **RESOLVED 2026-09-06 — owner-reported.** `/2/tweets` created a post on X in production via "Post to X now" on 0.3.1. The constant stands. Whether the featured image attached on that post is not yet reported. |
 | **OPEN-6** | The cron staleness threshold of 5 minutes assumes Hostinger can run cron every minute (OQ-18). | §11.3 | Keep 5 minutes, as one named constant. Revisit if hPanel's minimum turns out to be 5 minutes, in which case it becomes 15. |
 | **OPEN-7** | **Host allowlist reduced to one host.** Brief §8 requires `api.x.com` **and** `upload.x.com`; INV-3 allows only the first. | INV-3 | Resolved by OQ-13: the full flow was proven against `api.x.com` alone, and `upload.x.com` is the legacy v1.1 host brief §1.3 forbids building on. Listed because it changes a brief MUST. |
 | **OPEN-8** | **One-shot upload instead of chunked.** Brief §1.3 calls chunked "the recommended path"; §8.2 says MUST NOT use it in v1. | §8.2 | Resolved by OQ-14: both were proven to work, and §0's simplicity constraint requires the one with fewer moving parts. Chunked stays documented as the fallback. |
@@ -1200,7 +1200,7 @@ Rows OPEN-7 to OPEN-10 are departures from the brief that were resolved by evide
 
 ### Carried from `OPENQUESTIONS.md`
 
-Still open, none blocking: **OQ-1b** media-upload pricing, **OQ-15** the create-post path, **OQ-18** every-minute cron on Hostinger, **OQ-19** whether Apps still sit inside Projects. OQ-18 and OQ-19 need one sentence each from the owner. OQ-1b and OQ-15 are measurements belonging to later phases by the brief's own design.
+Still open, none blocking: **OQ-1b** media-upload pricing, **OQ-18** every-minute cron on Hostinger, **OQ-19** whether Apps still sit inside Projects. OQ-18 and OQ-19 need one sentence each from the owner. OQ-1b is a measurement belonging to a later phase by the brief's own design. **OQ-15** closed on 2026-09-06 when the first post reached X in production, which also withdrew the 403 stake that had been attached to OQ-19.
 
 ---
 

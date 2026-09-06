@@ -2,7 +2,7 @@
 
 Current state of the build. Updated in the same commit as the code it describes.
 
-**Last updated:** 2026-09-06
+**Last updated:** 2026-09-06 (first production post)
 
 ---
 
@@ -24,6 +24,8 @@ Current state of the build. Updated in the same commit as the code it describes.
 
 **Manual send for any published post — 2026-09-05.** The owner asked whether the admin could post *any* WordPress post to X. The brief's trigger in §1.5 is the transition to `publish`, and a post older than a day cannot even be re-triggered by unpublishing, because G-8 refuses it. Built as a third meta box button, "Post to X now", visible only on a published post in `none` or `cancelled`; it shares one helper with "Repost now" and schedules at delay 0 through the ordinary pipeline. `PROJECTBRIEF.md` is **v0.4** carrying **amendment 3** and **FR-2.6**; `SPEC.md` carries **amendment 2**, **TR-16**, FR-2.6, tests T-250 to T-253 and **OPEN-15**; **ADR-006** records the five sub-decisions. One behaviour change rides along: both manual buttons now set the per-post switch on, because the meta box form is submitted with the click and an unticked checkbox was cancelling the send the owner had just confirmed. Found while writing T-253, which drove the `save_post` ordering. Released as **0.3.0** the same day.
 
+**First post reached X in production — 2026-09-06.** The owner upgraded to 0.3.1 and clicked "Post to X now" on a real post; it appeared on X. This is the fact every release note since 0.1.0 said was missing, and it closes **OQ-15**: the create-post path is `/2/tweets`, and the constant stands. It also withdraws the stake attached to **OQ-19** on 2026-09-05 — Project membership, whatever the console shows, did not block the write. Owner-reported, not pasted: the HTTP status, remote id and log row were not captured, and whether the featured image attached and whether hashtags were on are not yet known. `SPEC.md` §8.3 and §17 OPEN-5, and `OPENQUESTIONS.md`, are updated to say exactly that much and no more.
+
 **The buttons never worked in the block editor — 2026-09-06.** The owner clicked "Post to X now" on a real site, accepted the billing confirmation, and nothing happened. All three meta box buttons were submit buttons inside the meta box form; the block editor wraps that form in `onsubmit="return false;"` and serialises only its fields on save, never a button's name and value. So the buttons only ever worked in the classic editor, and every test drove the handler directly rather than through a browser, which is why 0.3.0 shipped with it. Each button is now a nonce-protected link to `admin-post.php`, handled by `SRL_Post_Meta::handle_admin_post()`, the same pattern the notice-dismiss link already used. `SPEC.md` carries **amendment 3**: the mechanism paragraph under FR-2, one row in §15.1, and TR-16's notes 1 and 2 rewritten, because their reasoning rested on a `save_post` ordering that no longer exists. T-253 is renamed to what it now proves. The lesson worth keeping: a meta box "works in both editors" for display only, and the spec had already recorded that for field ordering in §11.5 without extending it to buttons. Review on the fix PR caught a consequence: a link bypasses the editor's save, so the fix-a-typo-then-repost workflow in `INSTRUCTIONS.md` would post the stale title if the author had not pressed Update. Accepted: both paid confirmations now say unsaved edits are not included, and the instructions say to save first. Saving programmatically from a link was rejected because it needs editor-specific JavaScript for both editors.
 
 ---
@@ -39,7 +41,7 @@ Packaged builds on GitHub. **A release is not the Release Gate.** Each of these 
 | [0.2.0](https://github.com/johnjanney/social-relay/releases/tag/v0.2.0) | `09ccf1f` | 2026-09-05 | Hashtags from the post's own tags | MINOR. Two new settings keys with safe defaults, no migration. |
 | [0.1.0](https://github.com/johnjanney/social-relay/releases/tag/v0.1.0) | `08fd0ff` | 2026-09-05 | First packaged build | Flagged pre-release, and left that way on purpose. |
 
-Every release so far carries the same caveat in its notes: `POST /2/tweets` is untested against the live API (OQ-15, bundled with OQ-19). Since 0.3.1 that test is one confirmed click away on any existing post, in either editor.
+Every release up to 0.3.1 carries the same caveat in its notes: `POST /2/tweets` is untested against the live API (OQ-15, bundled with OQ-19). **That caveat is retired as of 2026-09-06**: the owner's first "Post to X now" on 0.3.1 reached X. The notes on the release pages are left as written, because they were true when published.
 
 ---
 
@@ -77,6 +79,7 @@ Every release so far carries the same caveat in its notes: `POST /2/tweets` is u
 | Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
 | Activates on a real site | **yes** | wp-env dev site: table created, defaults written with the switch off, both cron events scheduled |
 | End-to-end on a real site | **yes** | published a post → `scheduled` + event created → ran `srl_send_post` → failed gracefully with reason `missing`, log row self-contained |
+| First post on X, in production | **yes, owner-reported 2026-09-06** | 0.3.1, "Post to X now" on a real post; the post appeared on X. Response and log row not captured; image attachment not yet reported. |
 | Admin screens render | **yes** | settings page 4,467 bytes with all four panels; meta box renders with nonce and the correct FR-2.5 and FR-2.6 controls |
 | CI on GitHub | **green** | <https://github.com/johnjanney/social-relay/actions> — all six jobs |
 
@@ -131,8 +134,9 @@ bug, which asserted one level too shallow to see it.
 |---|---|---|
 | OQ-1b | cost documentation | The Developer Console credit delta from the 2026-09-05 probe run |
 | OQ-18 | FR-1.6 threshold | Whether Hostinger's hPanel offers every-minute cron |
-| OQ-19 | `INSTALLATION.md` wording | Whether the X console still shows Projects |
-| Phase 6 acceptance | upgrading the verification marks in `INSTALLATION.md`, OPEN-5, OPEN-11 | A staging site with a sandbox X app |
+| OQ-19 | `INSTALLATION.md` wording only, since 2026-09-06 | Whether the X console still shows Projects |
+| Phase 6 acceptance | upgrading the verification marks in `INSTALLATION.md`, OPEN-11 | A staging site with a sandbox X app. OPEN-5 is closed by the production post. |
+| First production post, details | closing the image and hashtag questions on that post | Did the featured image attach? Were hashtags on? What does the log row show? |
 | Phase 10 acceptance | Release Gate | 7 days on the owner's staging site with real cron |
 
 `INSTALLATION.md` and `INSTRUCTIONS.md` were written on 2026-09-05 at the owner's explicit request, ahead of the Phase 6 acceptance run that brief §12 says should produce them. The concern was raised twice and overruled, which is the owner's call to make.

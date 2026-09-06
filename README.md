@@ -104,6 +104,8 @@ If your site's salts are rotated — routine after a security incident, and some
 
 [![CI](https://github.com/johnjanney/social-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/johnjanney/social-relay/actions/workflows/ci.yml)
 
+The first post from this plugin reached X in production on 2026-09-06, from "Post to X now" on 0.3.1, as reported by the owner. Until then every release note said the create-post call was untested; it no longer is.
+
 **Not released.** The plugin is implemented and passes PHPCS, PHPStan level 6, and its unit suite; the WordPress-dependent tests are not yet written, and it has never run on a real site. `STATE.md` is the honest account of what is done and what is not.
 
 ## License
