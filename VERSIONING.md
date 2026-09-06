@@ -41,7 +41,15 @@ A release candidate uses `X.Y.Z-rc.N` in locations 1, 2 and 4. `readme.txt`'s `S
 ## Branch and tag policy
 
 - **`main` is always releasable.** CI green on `main` is a precondition, not an aspiration.
-- Work happens on branches and merges into `main` via pull request. CI blocks the merge.
+- Work happens on branches and merges into `main` via pull request.
+- **CI is expected to block the merge — but it is not currently enforced.** GitHub does not offer branch protection or rulesets on a free plan for a *private* repository, and this repository is private. The API returns `403 Upgrade to GitHub Pro or make this repository public`. So today the rule is a convention the maintainer keeps, not a control the platform applies.
+
+  This is recorded rather than quietly dropped, because a documented rule nobody enforces is worse than an acknowledged one: it invites the assumption that something is checking. Two ways to make it real, whenever it matters:
+
+  1. Make the repository public. Branch protection is then available at no cost, which suits a GPL plugin intended for WordPress.org.
+  2. Upgrade to GitHub Pro and keep it private.
+
+  Until then, CI still runs on every push and pull request and its result is visible; nothing stops a red merge except the person doing it.
 - Releases are tagged **`vX.Y.Z`**. Release candidates are tagged **`vX.Y.Z-rc.N`**.
 - A tag is created only from a commit where CI is green.
 - CI fails if a version tag exists with no matching `CHANGELOG.md` heading.
