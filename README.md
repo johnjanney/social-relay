@@ -83,6 +83,8 @@ If your site's salts are rotated — routine after a security incident, and some
 
 ## Status
 
+[![CI](https://github.com/johnjanney/social-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/johnjanney/social-relay/actions/workflows/ci.yml)
+
 **Not released.** The plugin is implemented and passes PHPCS, PHPStan level 6, and its unit suite; the WordPress-dependent tests are not yet written, and it has never run on a real site. `STATE.md` is the honest account of what is done and what is not.
 
 ## License
