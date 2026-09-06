@@ -1,7 +1,7 @@
 # PROJECTBRIEF.md — Social Relay for WordPress
 
 **Working name:** Social Relay (slug `social-relay`, prefix `srl_`). The name is a placeholder. Confirm it in Phase 0.
-**Brief version:** 0.1 — 2026-09-05
+**Brief version:** 0.2 — 2026-09-05 (amendment 1, recorded in §3)
 **Author:** John Janney
 **Reader:** Claude Code CLI. Read this file in full before you write any code.
 
@@ -71,11 +71,21 @@ Record each of these in `README.md` under "Not in scope". Do not build them.
 - Multiple X accounts.
 - OAuth 2.0 PKCE flow.
 - Custom message templates with tokens beyond the three fields (title, image, URL). A single optional prefix/suffix string is allowed.
-- Hashtag generation, AI-written captions, URL shortening, UTM appending.
+- AI-written captions, URL shortening, UTM appending.
 - Posting for custom post types other than `post` (make the post type list filterable, but ship with `post` only).
 - Analytics, engagement reads, or any read endpoint. Reads cost money and add nothing to the goal.
 - Multisite network activation.
 - Gutenberg sidebar panel. A classic meta box is enough and works in both editors.
+
+**Amendment 1 — 2026-09-05. Hashtags left the non-goals and were built.**
+
+The fifth item above originally read: *"Hashtag generation, AI-written captions, URL shortening, UTM appending."* The owner asked for hashtags built from the post's own tags on 2026-09-05, after the Specification Gate had passed, and the feature is now merged to `main`.
+
+The line is **edited rather than annotated in place**, so §3 reads as current scope rather than as a list with a footnote contradicting it. Nothing is lost: the original wording is preserved here, in **ADR-005**, and in the git history.
+
+The distinction the amendment rests on is worth stating, because it is why the rest of that line is untouched: **nothing generates a hashtag.** Every hashtag is a `post_tag` term the author already typed, mechanically transformed. AI-written captions stay on the non-goal list beside it precisely because they would be generated. ADR-005 records this reading as supporting rather than load-bearing — the decision stands on the owner's instruction, not on the wording.
+
+Specified in `SPEC.md` §7.6 and added below as **FR-4.13**. Two premises about how X renders hashtags remain unverified and are tracked as **OQ-20**; neither can fail a send.
 
 ## 4. Functional requirements
 
@@ -113,7 +123,7 @@ Number each requirement. Each one MUST map to at least one automated test in Pha
 - FR-4.2 Set `_srl_status = sending` before the first API call. This is the lock.
 - FR-4.3 Read the current title and permalink at send time, not at schedule time. The owner may have corrected a typo during the delay.
 - FR-4.4 If a featured image exists: fetch the file from the local filesystem (not over HTTP). Downscale if larger than 5 MB or the X pixel limit. Upload via `POST /2/media/upload`. On failure after retries, continue without the image and record `image_omitted = true` with the reason.
-- FR-4.5 Compose text: `{prefix} {title} {suffix}\n{permalink}`. Truncate the title, never the URL, so the text fits X's length limit. X counts every URL as 23 characters. Confirm the current limit in Phase 0 (**[UNVERIFIED]**: 280 for standard accounts).
+- FR-4.5 Compose text: `{prefix} {title} {suffix} {hashtags}\n{permalink}`, where the hashtag block is empty unless FR-4.13 is enabled. Truncate the title, never the URL, so the text fits X's length limit. X counts every URL as 23 characters. Confirm the current limit in Phase 0 (**[UNVERIFIED]**: 280 for standard accounts).
 - FR-4.6 `POST /2/tweets` with text and `media_ids` if present.
 - FR-4.7 On HTTP 2xx: store the X post ID, set `_srl_status = sent`, `_srl_sent_at`, write a log row.
 - FR-4.8 On HTTP 429 or 5xx: reschedule with backoff (5 min, 15 min, 60 min), maximum 3 retries, then `failed`.
@@ -121,6 +131,7 @@ Number each requirement. Each one MUST map to at least one automated test in Pha
 - FR-4.10 On any other 4xx: do not retry. Set `failed` and log the body.
 - FR-4.11 On a duplicate-content error from X (X rejects identical text posted recently): set `failed` with reason `duplicate`, do not retry.
 - FR-4.12 Every API call increments the usage counter (FR-1.7) whether it succeeds or fails.
+- FR-4.13 Optionally append the post's own tags as hashtags. Off by default; capped at a configurable number per post. Multi-word tags join in PascalCase, because X ends a hashtag at the first character outside `[letter, digit, underscore]` — stripping spaces alone turns the tag `co-op` into `#co`, which is a wrong hashtag rather than an ugly one. Capitalisation the author typed is preserved, so `iPhone SE` stays `#iPhoneSE`. Hashtags are dropped whole, from the end, before the title is truncated: a title long enough to truncate sheds every hashtag first, so FR-4.5's guarantees are unchanged. Added by amendment 1; see §3.
 
 ### FR-5 Logging and notices
 

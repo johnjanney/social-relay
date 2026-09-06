@@ -32,11 +32,27 @@ WP-Cron only runs when someone visits your site. On a quiet site a 60-minute del
 - More than one X account.
 - OAuth 2.0 PKCE. You paste four keys once; there is no login flow to expire.
 - Message templates. An optional prefix and suffix, nothing more.
-- Hashtag generation, AI captions, link shortening, UTM tags.
+- AI captions, link shortening, UTM tags. Hashtags are built from the post's own tags — see below — but nothing is ever generated for you.
 - Post types other than `post`. The list is filterable but ships with one entry.
 - Analytics or any read endpoint. Reads cost money and add nothing to the goal.
 - Multisite network activation.
 - A Gutenberg sidebar panel. A classic meta box works in both editors.
+
+## Hashtags from your tags
+
+Off unless you turn it on. With it on, the post's own tags are appended as hashtags, three at most by default.
+
+A hashtag cannot contain a space, and X stops reading one at the first space or punctuation mark — so the words are joined and capitalised rather than merely stripped, which is the difference between a hashtag that works and one that is quietly wrong:
+
+| Your tag | Posted | Stripping spaces alone would give |
+|---|---|---|
+| `machine learning` | `#MachineLearning` | `#machinelearning` |
+| `iPhone SE` | `#iPhoneSE` | `#iphonese` |
+| `co-op` | `#CoOp` | `#co` — cut at the hyphen |
+| `rock 'n' roll` | `#RockNRoll` | `#rock` — cut at the apostrophe |
+| `2026` | *nothing* | `#2026`, which X will not link |
+
+Capitalisation you typed is kept, so a tag written `iPhone SE` is not flattened to `#IphoneSe`. **Hashtags never cost you words:** if the post is too long they are removed one at a time, whole, from the end, and your title is only shortened once they are all gone.
 
 ## How a post moves
 
