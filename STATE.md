@@ -43,18 +43,23 @@ Current state of the build. Updated in the same commit as the code it describes.
 | PHP syntax, every file | **passing** | `find . -path ./vendor -prune -o -name '*.php' -print0 \| xargs -0 -n1 php -l` |
 | PHPCS (WordPress standard) | **passing** | `vendor/bin/phpcs` |
 | PHPStan level 6 | **passing** | `vendor/bin/phpstan analyse` |
-| PHPUnit unit suite | **passing, 35 tests** | `vendor/bin/phpunit --testsuite unit` |
-| PHPUnit integration suite | **passing, 39 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
-| Full suite | **passing, 74 tests, 201 assertions** | run inside the wp-env tests container |
+| PHPUnit unit suite | **passing, 37 tests** | `vendor/bin/phpunit --testsuite unit` |
+| PHPUnit integration suite | **passing, 91 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
+| Full suite | **passing, 128 tests, 504 assertions** | run inside the wp-env tests container |
+| Test-to-requirement mapping | **105 of 134 (78%)** | `bin/check-test-coverage.sh` |
 | Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
 | Activates on a real site | **yes** | wp-env dev site: table created, defaults written with the switch off, both cron events scheduled |
 | End-to-end on a real site | **yes** | published a post → `scheduled` + event created → ran `srl_send_post` → failed gracefully with reason `missing`, log row self-contained |
 | Admin screens render | **yes** | settings page 4,467 bytes with all four panels; meta box renders with nonce and the correct FR-2.5 controls |
 | CI on GitHub | **never run** | no remote is configured |
 
-**Honest gap.** `SPEC.md` §16 names 132 tests. **74 exist.** The 74 cover the three pure-logic units, the scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema, and uninstall — which is where every defect found so far actually was. Not yet covered: the admin screens' rendering, the meta box save path end-to-end through a real editor request, the notices, and the email path. Those are written and linted but **not verified**, and that is not the same thing.
+**Honest gap.** `SPEC.md` §16 names 134 tests. **105 exist (78%).** They cover the three pure-logic units, all nine scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema and its versioning, the meta box save path, the owner actions, the notices, the security requirements, and uninstall. Still unwritten: the image downscale path (this workstation has neither GD nor Imagick, so `wp_get_image_editor()` cannot be exercised here), a few media-response variants, and the remaining admin-render permutations.
 
-Three real defects were found by testing against real WordPress, and fixed:
+**CI has never run.** There is no git remote configured, so `.github/workflows/ci.yml` is unexecuted. Everything above was run locally: PHPCS, PHPStan and the unit suite on the workstation, and the full suite inside the wp-env container on PHP 8.2 with WordPress 6.5.
+
+**Three numbered requirements had UI but no behaviour** — FR-1.5 "Send test post" did not exist, and the meta box's "Cancel scheduled post" and "Repost now" buttons submitted to nothing. Found by implementing SPEC §16.11's coverage check and reading which named tests had no method: several were unwritten because the feature was.
+
+Real defects found by testing against real WordPress, and fixed:
 
 - The one-minute cron schedule was registered on `plugins_loaded`, which does not fire for the plugin being activated, so the heartbeat never got scheduled. No heartbeat means no reconciliation scan and no honest cron health reading — INV-7 had no enforcement at all. Found by activating the plugin on a real site, not by any test.
 
