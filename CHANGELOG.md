@@ -46,6 +46,21 @@ Every commit that changes behaviour adds its line here in the same commit.
   T-441 through T-449. §17 gains **OPEN-14** for visibility. Without this the spec
   contradicted itself: §7.6 specified a feature §1 excluded, and §0 makes the spec
   the implementation contract. Found by review on PR #2.
+- **OQ-20 closed.** X's Help Center confirms both premises `SPEC.md` §7.6.1 rests on:
+  punctuation ends a hashtag where it occurs (`#it'sfun` is categorised under
+  `#it`), and an all-digit hashtag is not hyperlinked while `#123go` works. §7.6.1
+  now carries the quotations and is marked `[DOC]` rather than `[MEASURED]` —
+  `help.x.com` returns HTTP 403 to automated fetch, so the wording comes from two
+  independent search passes rather than a page read first-hand, and no live post
+  was inspected.
+- **OQ-19 stays open, with higher stakes than it was first given.** Two docs pages
+  read directly show an App-centric console with no Project step, which
+  strengthens the case that Projects are gone. But a developer-forum thread titled
+  "No Projects section in console, POST /2/tweets returns 403" argues against
+  closing it, and the row previously claimed nothing in the plugin depends on it.
+  That claim is withdrawn in `PROJECTBRIEF.md` §1.2: if Project membership still
+  gates write endpoints, it affects the one call the plugin cannot do without and
+  the one Phase 0 never tested. OQ-19 and OQ-15 are now one check.
 - `PROJECTBRIEF.md` amended again, to **v0.3**. **Amendment 2** sweeps every
   evidence label in the document against what Phase 0 actually established: the
   media-upload auth question becomes `[MEASURED]` (OQ-2, live HTTP 200), the 280
