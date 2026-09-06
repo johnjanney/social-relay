@@ -10,6 +10,12 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] - 2026-09-05
+
+First packaged build. **Pre-release: this has never posted to X in production.**
+
 ### Added
 
 - Project scaffolding: `composer.json` with dev-only dependencies, PHPCS with the
@@ -79,10 +85,18 @@ Phase 7 code review, all 16 findings applied:
   invalid URL as 23; and U+2026 weighs 2, not 1, so every truncated post overflowed by
   exactly one unit.
 
-### Notes
+### Known limitations
 
-Nothing is released yet. The plugin itself is not implemented in this section; the
-entries above are project infrastructure. The first release will describe the
-plugin's behaviour rather than its build system.
+- Never exercised against the live X API beyond the Phase 0 authentication probe.
+  Everything below is verified against the specification and against real
+  WordPress, which is not the same as verified in production.
+- `INSTALLATION.md` steps 1 to 3 (the X Developer Console) were written from
+  official documentation and not walked; each step in that file carries a mark
+  saying whether it was actually performed.
+- Image downscaling is not implemented. Images over 5 MB are skipped with a
+  recorded reason rather than resized, and the post still goes out.
+- The plugin has not run for an extended period on a live site. Phase 10 of the
+  project plan is a seven-day staging run, and it has not happened.
 
-[Unreleased]: https://github.com/johnjanney/social-relay/compare/main...HEAD
+[Unreleased]: https://github.com/johnjanney/social-relay/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/johnjanney/social-relay/releases/tag/v0.1.0
