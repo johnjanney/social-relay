@@ -10,6 +10,20 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-09-05
+
+Adds a manual send for any published post. **MINOR** under `VERSIONING.md`: new
+functionality, and nothing on that document's exhaustive breaking list applies. No
+settings key, hook, post meta key, table column or floor changes; the one new
+write is to an existing meta key, `_srl_enabled`, with a value it already takes.
+
+Still **pre-release in the sense that matters**: no post from this plugin has
+reached X in production, and the `POST /2/tweets` path remains untested against the
+live API (OQ-15, bundled with OQ-19). The new button makes that test one click
+away on any existing post.
+
 ### Added
 
 - A "Post to X now" button in the post meta box, for a published post the
@@ -194,6 +208,7 @@ Phase 7 code review, all 16 findings applied:
 - The plugin has not run for an extended period on a live site. Phase 10 of the
   project plan is a seven-day staging run, and it has not happened.
 
-[Unreleased]: https://github.com/johnjanney/social-relay/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/johnjanney/social-relay/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/johnjanney/social-relay/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/johnjanney/social-relay/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/johnjanney/social-relay/releases/tag/v0.1.0
