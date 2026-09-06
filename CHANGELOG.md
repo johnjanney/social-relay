@@ -10,6 +10,24 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.1] - 2026-09-06
+
+Fixes the meta box buttons in the block editor. **PATCH** under `VERSIONING.md`: a
+bug fix, and nothing on that document's exhaustive breaking list applies. One
+`admin_post` action is added, which rule 2 names as not breaking; no settings key,
+post meta key, table column, floor or published hook changes.
+
+**Upgrade from 0.3.0 is recommended.** In 0.3.0 every button in the meta box —
+including the "Post to X now" that release introduced — was dead in the block
+editor, which is the default editor since WordPress 5.0. Anyone on 0.3.0 with the
+block editor cannot cancel, repost or send by hand until they upgrade.
+
+Still **pre-release in the sense that matters**: no post from this plugin has
+reached X in production, and the `POST /2/tweets` path remains untested against the
+live API (OQ-15, bundled with OQ-19).
+
 ### Fixed
 
 - None of the three meta box buttons did anything in the block editor. "Cancel
@@ -223,7 +241,8 @@ Phase 7 code review, all 16 findings applied:
 - The plugin has not run for an extended period on a live site. Phase 10 of the
   project plan is a seven-day staging run, and it has not happened.
 
-[Unreleased]: https://github.com/johnjanney/social-relay/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/johnjanney/social-relay/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/johnjanney/social-relay/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/johnjanney/social-relay/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/johnjanney/social-relay/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/johnjanney/social-relay/releases/tag/v0.1.0
