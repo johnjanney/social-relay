@@ -127,6 +127,51 @@ final class OAuth1Test extends TestCase {
 	}
 
 	/**
+	 * T-903
+	 *
+	 * The load-bearing rule of SPEC 8.1: the body enters the signature base
+	 * string ONLY when it is application/x-www-form-urlencoded. This plugin
+	 * sends JSON, so the JSON must never be signed. Signing it produces a
+	 * request that fails with a bare 401 and no diagnostic.
+	 */
+	public function test_json_body_is_not_included_in_the_signature(): void {
+		$oauth = array(
+			'oauth_consumer_key'     => 'K',
+			'oauth_nonce'            => 'N',
+			'oauth_signature_method' => 'HMAC-SHA1',
+			'oauth_timestamp'        => '100',
+			'oauth_token'            => 'T',
+			'oauth_version'          => '1.0',
+		);
+
+		$base = SRL_OAuth1::base_string( 'POST', 'https://api.x.com/2/tweets', array(), $oauth );
+
+		$this->assertStringNotContainsString( 'text', $base );
+		$this->assertStringNotContainsString( 'media_ids', $base );
+
+		// Passing body parameters would change the signature, which is exactly
+		// why they must not be passed for a JSON body.
+		$with_body = SRL_OAuth1::base_string( 'POST', 'https://api.x.com/2/tweets', array(), $oauth, array( 'text' => 'hello' ) );
+		$this->assertNotSame( $base, $with_body );
+	}
+
+	/**
+	 * T-904
+	 *
+	 * multipart/form-data is a form content type but is NOT
+	 * application/x-www-form-urlencoded, so its parts are never signed either.
+	 */
+	public function test_multipart_body_is_not_included_in_the_signature(): void {
+		$signer = new SRL_OAuth1( 'K', 'KS', 'T', 'TS' );
+
+		$header = $signer->authorization_header( 'POST', 'https://api.x.com/2/media/upload', 'N', 100 );
+
+		$this->assertStringNotContainsString( 'media_category', $header );
+		$this->assertStringNotContainsString( 'tweet_image', $header );
+		$this->assertStringNotContainsString( 'boundary', $header );
+	}
+
+	/**
 	 * Completeness check used before any request is attempted.
 	 */
 	public function test_is_complete_requires_all_four_values(): void {
