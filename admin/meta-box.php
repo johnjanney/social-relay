@@ -77,7 +77,7 @@ wp_nonce_field( SRL_Post_Meta::NONCE_ACTION, SRL_Post_Meta::NONCE_FIELD );
 		<a
 			class="button"
 			href="<?php echo esc_url( SRL_Post_Meta::action_url( $srl_post_id, 'send_now' ) ); ?>"
-			onclick="return confirm('<?php echo esc_js( __( 'Post this to X now? This creates a post and is billed.', 'social-relay' ) ); ?>');"
+			onclick="return confirm('<?php echo esc_js( __( 'Post this to X now? This creates a post and is billed. Unsaved edits are not included: save the post first.', 'social-relay' ) ); ?>');"
 		><?php esc_html_e( 'Post to X now', 'social-relay' ); ?></a>
 	</p>
 	<p class="description">
@@ -90,10 +90,10 @@ wp_nonce_field( SRL_Post_Meta::NONCE_ACTION, SRL_Post_Meta::NONCE_FIELD );
 		<a
 			class="button"
 			href="<?php echo esc_url( SRL_Post_Meta::action_url( $srl_post_id, 'repost' ) ); ?>"
-			onclick="return confirm('<?php echo esc_js( __( 'Post this to X again? This creates a second post and is billed again.', 'social-relay' ) ); ?>');"
+			onclick="return confirm('<?php echo esc_js( __( 'Post this to X again? This creates a second post and is billed again. Unsaved edits are not included: save the post first.', 'social-relay' ) ); ?>');"
 		><?php esc_html_e( 'Repost now', 'social-relay' ); ?></a>
 	</p>
 	<p class="description">
-		<?php esc_html_e( 'This is the only way to post the same article twice.', 'social-relay' ); ?>
+		<?php esc_html_e( 'This is the only way to post the same article twice. Save any edits first: the button reloads the page and posts the saved version.', 'social-relay' ); ?>
 	</p>
 <?php endif; ?>

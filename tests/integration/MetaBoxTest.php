@@ -192,6 +192,7 @@ class MetaBoxTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'do=repost', $html );
 		$this->assertMatchesRegularExpression( '/do=repost[^"]*_wpnonce=[0-9a-f]+/', $html, 'the repost link carries its own nonce' );
 		$this->assertStringContainsString( 'confirm(', $html );
+		$this->assertStringContainsString( 'Unsaved edits are not included', $html, 'the link bypasses save_post, so the confirmation must say so' );
 	}
 
 	/**

@@ -91,6 +91,8 @@ Once a post is **Sent** or **Failed**, a **Repost now** button appears.
 
 It asks you to confirm, because it creates a **second, separately billed post**. It sends immediately rather than waiting for the delay.
 
+**Save first.** The button reloads the page and posts the version of the post that is saved. If you have just fixed the typo and not yet pressed Update, the repost goes out with the old title. The confirmation reminds you.
+
 Use it when:
 
 - a send failed for a reason that has since been fixed, such as corrected API keys;
