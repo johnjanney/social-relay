@@ -51,12 +51,12 @@ Maximum 72 hours (4320 minutes). Type something larger and the plugin quietly us
 
 | Status | What it means | What to do |
 |---|---|---|
-| **Not scheduled** | Nothing will be sent. Either the box is unticked, the site's master switch is off, or the post is not published yet. | Nothing, unless you expected otherwise. |
+| **Not scheduled** | Nothing will be sent. Either the box is unticked, the site's master switch is off, the post is not published yet, or it was published before the plugin was set up. | Nothing, unless you want it sent — then "Post to X now", below. |
 | **Scheduled for {time}** | Waiting. It will go out at that time or shortly after. | Nothing. You can still cancel. |
 | **Sending now** | The send is happening right now. Usually lasts a second or two. | Wait. Refresh in a moment. |
 | **Sent {time} — View on X** | Done. The link opens the actual post. | Click through and check it looks right. |
 | **Failed: {reason}** | It did not go out. The reason is shown. | See the failure table below. |
-| **Cancelled** | It was scheduled and then stopped — by you, or because the post left "Published". | Nothing, unless you want it to go after all. Republish or use "Repost now". |
+| **Cancelled** | It was scheduled and then stopped — by you, or because the post left "Published". | Nothing, unless you want it to go after all — then "Post to X now", below. |
 
 ---
 
@@ -81,7 +81,7 @@ Click it and press Update. The status becomes **Cancelled** and nothing is sent.
 
 This is the button to use when you have published something and then thought better of sharing it, or spotted a mistake you want to fix first. It costs nothing.
 
-**If you cancel and then want it to go after all**, use "Repost now" — see below.
+**If you cancel and then want it to go after all**, use "Post to X now" — see below.
 
 ---
 
@@ -102,6 +102,18 @@ Use it when:
 - **`malformed_response`** — X accepted the post but sent back something the plugin could not read. The post is probably there. **Check your timeline first.**
 
 Reposting in either case gives you two posts and two charges.
+
+---
+
+## Posting an older or skipped post
+
+A published post whose status is **Not scheduled** or **Cancelled** has a **Post to X now** button.
+
+It is for the posts the automatic path never touched: everything you published before Social Relay was installed, a post that came in through an import or a bulk edit, one you published with the box unticked and have changed your mind about, or one you cancelled and now want after all.
+
+Click it, confirm, and press Update. It goes out at the next scheduler run rather than after the usual delay, and it is billed like any other post. It ticks the "Post to X" box for you if it was unticked.
+
+It is a first send, so the once-only rule is not affected. The button does not appear on a post that is already **Sent** — for that, and only that, there is "Repost now" — and it does not appear on a draft, because a draft has no public link to send.
 
 ---
 
@@ -209,6 +221,7 @@ For a tester verifying a new installation, or an administrator confirming someth
 | 6 | Break the API keys deliberately (change one character) and publish. | **Failed** with an admin notice. No retry loop. Restore the keys afterwards. |
 | 7 | Publish, wait for **Sent**, then unpublish and republish. | Status stays **Sent**. Nothing is sent again. **This is the duplicate-post guard; it matters most.** |
 | 8 | On a **Sent** post, click "Repost now" and confirm. | A second post appears on X. Deliberate, confirmed, billed twice. |
+| 8a | On a post published **before the plugin was installed**, click "Post to X now" and confirm. | Status **Scheduled**, then **Sent** at the next scheduler run. One post on X. The "Post to X" box is now ticked. |
 | 9 | Check Settings → Social Relay → **Cron health**. | Green. If not, delays are unreliable — see `INSTALLATION.md` step 7. |
 | 10 | Compare the **API usage** panel with your X Developer Console for the same month. | Close. The plugin counts every request including failures, because X bills for those too. The Console is authoritative. |
 

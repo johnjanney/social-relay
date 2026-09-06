@@ -74,6 +74,21 @@ wp_nonce_field( SRL_Post_Meta::NONCE_ACTION, SRL_Post_Meta::NONCE_FIELD );
 	</p>
 <?php endif; ?>
 
+<?php if ( 'publish' === $post->post_status && in_array( $srl_status, array( SRL_Post_Meta::STATUS_NONE, SRL_Post_Meta::STATUS_CANCELLED ), true ) ) : ?>
+	<p>
+		<button
+			type="submit"
+			class="button"
+			name="srl_action"
+			value="send_now"
+			onclick="return confirm('<?php echo esc_js( __( 'Post this to X now? This creates a post and is billed.', 'social-relay' ) ); ?>');"
+		><?php esc_html_e( 'Post to X now', 'social-relay' ); ?></button>
+	</p>
+	<p class="description">
+		<?php esc_html_e( 'For a post that was published before Social Relay was set up, or that was skipped or cancelled. It goes out at the next scheduler run.', 'social-relay' ); ?>
+	</p>
+<?php endif; ?>
+
 <?php if ( in_array( $srl_status, array( SRL_Post_Meta::STATUS_SENT, SRL_Post_Meta::STATUS_FAILED ), true ) ) : ?>
 	<p>
 		<button

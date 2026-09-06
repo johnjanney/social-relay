@@ -1,7 +1,7 @@
 # PROJECTBRIEF.md — Social Relay for WordPress
 
 **Working name:** Social Relay (slug `social-relay`, prefix `srl_`). The name is a placeholder. Confirm it in Phase 0.
-**Brief version:** 0.3 — 2026-09-05 (amendments 1 and 2; see §3 and §0)
+**Brief version:** 0.4 — 2026-09-05 (amendments 1, 2 and 3; see §3, §0 and §4)
 **Author:** John Janney
 **Reader:** Claude Code CLI. Read this file in full before you write any code.
 
@@ -137,6 +137,15 @@ Number each requirement. Each one MUST map to at least one automated test in Pha
 - FR-2.3 Read-only status: Not scheduled / Scheduled for {time} / Sent {time} — {link to X post} / Failed — {reason}.
 - FR-2.4 Button: "Cancel scheduled post" (visible only while status is Scheduled).
 - FR-2.5 Button: "Repost now" (visible only when status is Sent or Failed; requires a confirmation click; this is the only path to a second post).
+- FR-2.6 Button: "Post to X now" (visible only when the post is published and its status is Not scheduled or Cancelled; requires a confirmation click; goes through the scheduler at delay 0, never inline). This is the owner's path for a post the automatic trigger in Section 1.5 never covered: one published before the plugin was installed, one skipped by the import, bulk-edit or freshness guards, one published with a switch off, or one whose scheduled post was cancelled. It is a *first* send, so the at-most-once rule in Section 1.5 is untouched; it does not apply to a post that is already Sent, where "Repost now" remains the only path. Added by amendment 3.
+
+**Amendment 3 — 2026-09-05. A manual send for any published post.**
+
+Section 1.5 defines the automatic trigger as the transition to `publish`, and Section 2's goal is worded around "each newly published" post. Nothing in the brief gave the owner a way to send a post that trigger had not reached — a post older than the plugin, or one the guards in `SPEC.md` §10.3 deliberately skipped — short of unpublishing and republishing it, which the freshness guard then rejects for anything older than a day. The owner asked for that path on 2026-09-05, after the Specification Gate had passed.
+
+**No requirement is edited.** FR-2.6 is added beside the two existing buttons because it is the same shape as them: a nonce-protected, capability-checked, confirmed click on the post edit screen that schedules a single cron event. The goal sentence in Section 2 still describes the automatic behaviour, and the at-most-once rule stands unchanged because a post that has never been sent is being sent once. The guards that exist to stop *unintended* paid posts — import, bulk edit, freshness — are bypassed by design here, because a confirmed click on one post is the intent they exist to detect the absence of.
+
+Specified in `SPEC.md` §10.1 as **TR-16** and §13 as **FR-2.6**; recorded as **ADR-006**.
 
 ### FR-3 Scheduling
 

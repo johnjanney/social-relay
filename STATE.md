@@ -22,6 +22,8 @@ Current state of the build. Updated in the same commit as the code it describes.
 
 **OQ-20 closed, OQ-19 escalated — 2026-09-05.** X's Help Center confirms both premises behind the hashtag conversion rules, so `SPEC.md` §7.6.1 now carries the quotations as **[DOC]**. It is not **[MEASURED]**: `help.x.com` refuses automated fetch, so the wording comes from two independent search passes rather than a page read first-hand, and no live post was inspected. OQ-19 went the other way. The documentation evidence got stronger — two pages read directly show an App-centric console with no Project step — but a developer-forum thread titled "No Projects section in console, POST /2/tweets returns 403" argues against closing it, so the row's original claim that nothing in the plugin depends on it is **withdrawn**. If Project membership still gates write endpoints it affects `POST /2/tweets`, the one call the plugin cannot do without and the one Phase 0 never tested (**OQ-15**). OQ-19 and OQ-15 are now one check, settled the first time "Send test post" runs against the real API.
 
+**Manual send for any published post — 2026-09-05.** The owner asked whether the admin could post *any* WordPress post to X. The brief's trigger in §1.5 is the transition to `publish`, and a post older than a day cannot even be re-triggered by unpublishing, because G-8 refuses it. Built as a third meta box button, "Post to X now", visible only on a published post in `none` or `cancelled`; it shares one helper with "Repost now" and schedules at delay 0 through the ordinary pipeline. `PROJECTBRIEF.md` is **v0.4** carrying **amendment 3** and **FR-2.6**; `SPEC.md` carries **amendment 2**, **TR-16**, FR-2.6, tests T-250 to T-253 and **OPEN-15**; **ADR-006** records the five sub-decisions. One behaviour change rides along: both manual buttons now set the per-post switch on, because the meta box form is submitted with the click and an unticked checkbox was cancelling the send the owner had just confirmed. Found while writing T-253, which drives the real `save_post` ordering.
+
 ---
 
 ## Build units
@@ -42,6 +44,7 @@ Current state of the build. Updated in the same commit as the code it describes.
 | 12 | Admin screens | **done** | integration tests pending |
 | 13 | Uninstall | **done** | integration tests pending |
 | 14 | Hashtags from post tags | **done** | 8 unit tests, 1 integration test |
+| 15 | Manual send for any published post | **done** | 4 integration tests |
 
 ## Verification
 
@@ -51,16 +54,16 @@ Current state of the build. Updated in the same commit as the code it describes.
 | PHPCS (WordPress standard) | **passing** | `vendor/bin/phpcs` |
 | PHPStan level 6 | **passing** | `vendor/bin/phpstan analyse` |
 | PHPUnit unit suite | **passing, 45 tests** | `vendor/bin/phpunit --testsuite unit` |
-| PHPUnit integration suite | **passing, 136 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
-| Full suite | **passing, 181 tests, 717 assertions** | run inside the wp-env tests container |
-| Test-to-requirement mapping | **138 of 146 (94%)** | `bin/check-test-coverage.sh` |
+| PHPUnit integration suite | **passing, 140 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
+| Full suite | **passing, 185 tests, 752 assertions** | run inside the wp-env tests container |
+| Test-to-requirement mapping | **142 of 150 (94%)** | `bin/check-test-coverage.sh` |
 | Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
 | Activates on a real site | **yes** | wp-env dev site: table created, defaults written with the switch off, both cron events scheduled |
 | End-to-end on a real site | **yes** | published a post → `scheduled` + event created → ran `srl_send_post` → failed gracefully with reason `missing`, log row self-contained |
-| Admin screens render | **yes** | settings page 4,467 bytes with all four panels; meta box renders with nonce and the correct FR-2.5 controls |
+| Admin screens render | **yes** | settings page 4,467 bytes with all four panels; meta box renders with nonce and the correct FR-2.5 and FR-2.6 controls |
 | CI on GitHub | **green** | <https://github.com/johnjanney/social-relay/actions> — all six jobs |
 
-**Honest gap.** `SPEC.md` §16 names 146 tests. **138 exist (94%).** They cover the three pure-logic units, all nine scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema and its versioning, the meta box save path, the owner actions, the notices, the security requirements, and uninstall. Still unwritten: the image downscale path (this workstation has neither GD nor Imagick, so `wp_get_image_editor()` cannot be exercised here), a few media-response variants, and the remaining admin-render permutations.
+**Honest gap.** `SPEC.md` §16 names 150 tests. **142 exist (94%).** They cover the three pure-logic units, all nine scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema and its versioning, the meta box save path, the owner actions, the notices, the security requirements, and uninstall. Still unwritten: the image downscale path (this workstation has neither GD nor Imagick, so `wp_get_image_editor()` cannot be exercised here), a few media-response variants, and the remaining admin-render permutations.
 
 **CI is green.** Repository: <https://github.com/johnjanney/social-relay> (private). All six jobs pass:
 

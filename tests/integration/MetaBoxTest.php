@@ -192,6 +192,50 @@ class MetaBoxTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'confirm(', $html );
 	}
 
+	/**
+	 * T-250
+	 *
+	 * "Post to X now" is the path for a post the automatic trigger never
+	 * reached, so it renders for a published post in `none` or `cancelled`
+	 * and for nothing else: not for a draft, whose permalink is dead, and not
+	 * for a sent post, where "Repost now" is the only path to a second post.
+	 */
+	public function test_send_now_button_visible_only_for_published_unsent_posts(): void {
+		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		$draft   = self::factory()->post->create( array( 'post_status' => 'draft' ) );
+
+		delete_post_meta( $post_id, SRL_Post_Meta::META_STATUS );
+		$html = $this->render( (int) $post_id );
+		$this->assertStringContainsString( 'Post to X now', $html, 'published, no status' );
+		$this->assertStringContainsString( 'value="send_now"', $html );
+		$this->assertStringContainsString( 'confirm(', $html );
+		$this->assertStringNotContainsString( 'Repost now', $html );
+		$this->assertStringNotContainsString( 'Cancel scheduled post', $html );
+
+		SRL_Post_Meta::set_status( (int) $post_id, SRL_Post_Meta::STATUS_CANCELLED );
+		$this->assertStringContainsString( 'Post to X now', $this->render( (int) $post_id ), 'published, cancelled' );
+
+		foreach ( array( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::STATUS_SENDING, SRL_Post_Meta::STATUS_SENT, SRL_Post_Meta::STATUS_FAILED ) as $status ) {
+			SRL_Post_Meta::set_status( (int) $post_id, $status );
+			$this->assertStringNotContainsString( 'Post to X now', $this->render( (int) $post_id ), "published, {$status}" );
+		}
+
+		delete_post_meta( $draft, SRL_Post_Meta::META_STATUS );
+		$this->assertStringNotContainsString( 'Post to X now', $this->render( (int) $draft ), 'draft, no status' );
+	}
+
+	/**
+	 * Render the meta box for a post and return the HTML.
+	 *
+	 * @param int $post_id Post id.
+	 * @return string
+	 */
+	private function render( int $post_id ): string {
+		ob_start();
+		SRL_Post_Meta::render( get_post( $post_id ) );
+		return (string) ob_get_clean();
+	}
+
 	/** T-304 */
 	public function test_autosave_and_revision_schedule_nothing(): void {
 		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );

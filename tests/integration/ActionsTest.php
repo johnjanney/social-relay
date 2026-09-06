@@ -30,7 +30,12 @@ class ActionsTest extends WP_UnitTestCase {
 	}
 
 	public function tear_down(): void {
-		unset( $_POST[ SRL_Post_Meta::NONCE_FIELD ], $_POST['srl_action'] );
+		unset(
+			$_POST[ SRL_Post_Meta::NONCE_FIELD ],
+			$_POST['srl_action'],
+			$_POST[ SRL_Post_Meta::FIELD_ENABLED ],
+			$_POST[ SRL_Post_Meta::FIELD_DELAY ]
+		);
 		parent::tear_down();
 	}
 
@@ -111,6 +116,149 @@ class ActionsTest extends WP_UnitTestCase {
 		SRL_Post_Meta::handle_action( (int) $post_id );
 
 		$this->assertSame( SRL_Post_Meta::STATUS_SENT, SRL_Post_Meta::get_status( (int) $post_id ) );
+	}
+
+	/**
+	 * T-251
+	 *
+	 * The per-post switch is forced on. On a site whose master switch is off
+	 * the checkbox defaults unticked, so save() stores '0' just before this
+	 * handler runs, and the publisher's re-read would then cancel the send the
+	 * owner just confirmed.
+	 */
+	public function test_send_now_schedules_at_zero_delay_and_sets_the_switch(): void {
+		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		delete_post_meta( $post_id, SRL_Post_Meta::META_STATUS );
+		update_post_meta( $post_id, SRL_Post_Meta::META_ENABLED, '0' );
+		update_post_meta( $post_id, SRL_Post_Meta::META_ATTEMPTS, 2 );
+		update_post_meta( $post_id, SRL_Post_Meta::META_LAST_ERROR, 'server' );
+
+		$this->submit( 'send_now' );
+		SRL_Post_Meta::handle_action( (int) $post_id );
+
+		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
+		$this->assertSame( '1', get_post_meta( $post_id, SRL_Post_Meta::META_ENABLED, true ), 'a confirmed click outranks the checkbox' );
+		$this->assertSame( '', get_post_meta( $post_id, SRL_Post_Meta::META_ATTEMPTS, true ) );
+		$this->assertSame( '', get_post_meta( $post_id, SRL_Post_Meta::META_LAST_ERROR, true ) );
+
+		$due = (int) wp_next_scheduled( SRL_Scheduler::SEND_HOOK, SRL_Scheduler::event_args( (int) $post_id ) );
+		$this->assertEqualsWithDelta( time(), $due, 10, 'a manual send goes out at delay 0' );
+		$this->assertEqualsWithDelta( $due, (int) get_post_meta( $post_id, SRL_Post_Meta::META_SCHEDULED_AT, true ), 1 );
+
+		$row = SRL_Log::recent( 1 )[0];
+		$this->assertSame( SRL_Log::EVENT_SCHEDULED, $row->event );
+		$this->assertSame( (int) $post_id, (int) $row->post_id );
+		$this->assertStringContainsString( 'Manual send', (string) $row->message );
+	}
+
+	/**
+	 * T-252
+	 *
+	 * `sent` and `sending` are INV-1; `failed` belongs to "Repost now"; and an
+	 * unpublished post has no public permalink to send, so a draft is refused
+	 * even from the two statuses the button otherwise accepts.
+	 */
+	public function test_send_now_is_ignored_from_sent_sending_failed_and_unpublished(): void {
+		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+
+		foreach ( array( SRL_Post_Meta::STATUS_SENT, SRL_Post_Meta::STATUS_SENDING, SRL_Post_Meta::STATUS_FAILED ) as $status ) {
+			SRL_Post_Meta::set_status( (int) $post_id, $status );
+			_set_cron_array( array() );
+
+			$this->submit( 'send_now' );
+			SRL_Post_Meta::handle_action( (int) $post_id );
+
+			$this->assertSame( $status, SRL_Post_Meta::get_status( (int) $post_id ), "must be ignored from {$status}" );
+			$this->assertFalse( SRL_Scheduler::has_pending_send( (int) $post_id ), "no event from {$status}" );
+		}
+
+		$draft = self::factory()->post->create( array( 'post_status' => 'draft' ) );
+		foreach ( array( SRL_Post_Meta::STATUS_NONE, SRL_Post_Meta::STATUS_CANCELLED ) as $status ) {
+			SRL_Post_Meta::set_status( (int) $draft, $status );
+			_set_cron_array( array() );
+
+			$this->submit( 'send_now' );
+			SRL_Post_Meta::handle_action( (int) $draft );
+
+			$this->assertSame( $status, SRL_Post_Meta::get_status( (int) $draft ), "a draft must be refused from {$status}" );
+			$this->assertFalse( SRL_Scheduler::has_pending_send( (int) $draft ) );
+		}
+	}
+
+	/**
+	 * T-253
+	 *
+	 * Drives the real save_post path. save() runs at priority 10 and its
+	 * reconcile step schedules a fresh, enabled post at the default delay;
+	 * handle_action() at priority 20 must then replace that event with one
+	 * due now, leaving exactly one event. Without this the click is swallowed
+	 * by G-5 and the owner who asked for "now" gets "in an hour".
+	 *
+	 * The admin hooks are not registered in the test context (is_admin() is
+	 * false), so the two callbacks are attached here at the priorities
+	 * SRL_Plugin::register_admin_hooks() uses.
+	 */
+	public function test_send_now_replaces_an_event_scheduled_in_the_same_request(): void {
+		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		delete_post_meta( $post_id, SRL_Post_Meta::META_STATUS );
+		_set_cron_array( array() );
+
+		$this->submit( 'send_now' );
+		$_POST[ SRL_Post_Meta::FIELD_ENABLED ] = '1';
+		$_POST[ SRL_Post_Meta::FIELD_DELAY ]   = '60';
+
+		// First, save() alone: proves the reconcile step really does schedule
+		// at the default delay, so the second half is not passing vacuously.
+		add_action( 'save_post', array( SRL_Post_Meta::class, 'save' ), 10, 1 );
+		wp_update_post(
+			array(
+				'ID'         => $post_id,
+				'post_title' => 'Edited once',
+			)
+		);
+
+		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
+		$due = (int) wp_next_scheduled( SRL_Scheduler::SEND_HOOK, SRL_Scheduler::event_args( (int) $post_id ) );
+		$this->assertEqualsWithDelta( time() + HOUR_IN_SECONDS, $due, 10, 'save() alone schedules at the override delay' );
+
+		// Now the full path, with the click's handler after save().
+		add_action( 'save_post', array( SRL_Post_Meta::class, 'handle_action' ), 20, 1 );
+		wp_update_post(
+			array(
+				'ID'         => $post_id,
+				'post_title' => 'Edited twice',
+			)
+		);
+
+		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
+		$due = (int) wp_next_scheduled( SRL_Scheduler::SEND_HOOK, SRL_Scheduler::event_args( (int) $post_id ) );
+		$this->assertEqualsWithDelta( time(), $due, 10, 'the click wins over the reconciled default delay' );
+		$this->assertSame( 1, $this->count_send_events( (int) $post_id ), 'exactly one event survives' );
+
+		remove_action( 'save_post', array( SRL_Post_Meta::class, 'save' ), 10 );
+		remove_action( 'save_post', array( SRL_Post_Meta::class, 'handle_action' ), 20 );
+	}
+
+	/**
+	 * Count every pending send event for a post, at any timestamp.
+	 *
+	 * The earliest event is all wp_next_scheduled() reports, which would
+	 * hide a second one left behind at the default delay.
+	 *
+	 * @param int $post_id Post id.
+	 * @return int
+	 */
+	private function count_send_events( int $post_id ): int {
+		$key   = md5( serialize( SRL_Scheduler::event_args( $post_id ) ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- Mirrors WordPress's own cron key.
+		$count = 0;
+
+		foreach ( (array) _get_cron_array() as $events ) {
+			if ( isset( $events[ SRL_Scheduler::SEND_HOOK ][ $key ] ) ) {
+				++$count;
+			}
+		}
+
+		return $count;
 	}
 
 	/**

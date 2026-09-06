@@ -10,11 +10,13 @@ Approved with the open items in §17 noted, and with three decisions recorded at
 **Spec version:** 1.0
 **Date:** 2026-09-05
 **Review:** `reviews/spec-review-1.md` — 4 blocker, 13 major, 11 minor, 1 question. Every finding was accepted; none was declined. The response is summarised in §19.
-**Inputs:** `PROJECTBRIEF.md` v0.3 (amendments 1 and 2), `DECISIONS.md` ADR-001..005 (all accepted), `OPENQUESTIONS.md` (no blocking row open).
+**Inputs:** `PROJECTBRIEF.md` v0.4 (amendments 1 to 3), `DECISIONS.md` ADR-001..006 (all accepted), `OPENQUESTIONS.md` (no blocking row open).
 
 > **Specification Gate — PASSED 2026-09-05.** The marker is at the top of this file. Changes from here on are amendments to an approved specification, and each one says so.
 
 > **Amendment 1 — 2026-09-05.** Hashtags built from the post's own tags, added on the owner's instruction after the gate. It introduces **§7.6**, **FR-4.13**, the two `hashtags_*` rows in §3, the hashtag block in §7.2's composition, and tests **T-441** through **T-449**. `PROJECTBRIEF.md` was amended to v0.2 at the same time, which is why §1's scope statement no longer excludes them and why this is no longer a departure from the brief. Recorded as **ADR-005**; two unverified premises about how X renders hashtags are **OQ-20** and §17's **OPEN-14**.
+
+> **Amendment 2 — 2026-09-05.** A manual "Post to X now" for any published post the automatic trigger never sent, added on the owner's instruction after the gate. It introduces **TR-16** in §10.1, **FR-2.6** in §13, tests **T-250** through **T-253** in §16.3, and one sentence in §1. TR-10 gains one side effect at the same time, for the reason given under TR-16. `PROJECTBRIEF.md` was amended to v0.4 (amendment 3, FR-2.6) at the same time, so this is not a departure from the brief. Recorded as **ADR-006** and §17's **OPEN-15**.
 
 ---
 
@@ -35,6 +37,8 @@ Approved with the open items in §17 noted, and with three decisions recorded at
 **Not in scope for v1** (from brief §3 as amended, v0.2): other networks; multiple X accounts; OAuth 2.0 PKCE; message templates beyond a prefix and suffix; AI captions, URL shortening, UTM appending; post types other than `post`; analytics or any read endpoint used for engagement; multisite network activation; a Gutenberg sidebar panel.
 
 Hashtags read from the post's own tags were on that list until **amendment 1** and are now in scope; see §7.6 and FR-4.13. Nothing is *generated* — every hashtag is a `post_tag` term the author typed — which is why AI captions remain excluded beside it.
+
+The goal sentence describes the automatic path. Since **amendment 2** the owner can also send any *published* post of an enabled type by hand, from its edit screen, through the same scheduler and pipeline; see TR-16 and FR-2.6. It is a first send for a post the automatic trigger never reached, so INV-1 is unaffected.
 
 **Target shape.** Fewer than 15 PHP files. No build step. No Composer runtime dependencies. No bundled scheduler.
 
@@ -568,6 +572,7 @@ none ──publish + enabled──▶ scheduled ──event fires──▶ sendi
                             cancelled                    └──4xx, or attempts=3──▶ failed
 
 sent / failed ──"Repost now" + confirm──▶ scheduled (delay 0)
+none / cancelled ──"Post to X now" + confirm, post is publish──▶ scheduled (delay 0)
 scheduled ──"Cancel scheduled post"──▶ cancelled
 ```
 
@@ -586,12 +591,21 @@ Every row has at least one test in §16.
 | TR-7 | `sending` | HTTP 2xx with a parseable id | `sent` | Store `_srl_remote_id`, `_srl_sent_at`, log `sent`. |
 | TR-8 | `sending` | Retryable failure, `attempts < 3` | `scheduled` | Increment `_srl_attempts`, schedule backoff, log `retry`. |
 | TR-9 | `sending` | Terminal failure, or `attempts = 3` | `failed` | Store `_srl_last_error`, log `failed`, raise notice. |
-| TR-10 | `sent` or `failed` | "Repost now", confirmed | `scheduled` | Reset `_srl_attempts` to 0, schedule at delay 0, log `scheduled`. |
+| TR-10 | `sent` or `failed` | "Repost now", confirmed | `scheduled` | Reset `_srl_attempts` to 0, set `_srl_enabled` to `1` (amendment 2; see TR-16), schedule at delay 0, log `scheduled`. |
 | TR-11 | any | A second cron event fires for a post not in `scheduled` | unchanged | Exit without an API call. INV-1. Log nothing. |
 | TR-12 | `sending` | `_srl_sending_since` is more than 15 minutes old, observed by the scan in §11.7 | `failed` | `_srl_last_error = 'stalled'`, log `failed`, raise notice. **No automatic retry.** |
 | TR-13 | `sent` | A publish transition fires again (unpublish-republish, private-republish, untrash) | `sent` | **No-op.** Nothing scheduled. The meta box explains why, and offers "Repost now" as the only path. |
 | TR-14 | `sending` | Post is trashed or unpublished while a send is in flight | `sending` → resolved by TR-7/TR-9 | Mark the intent; **do not** clear the in-flight attempt and do not attempt to unsend. The send completes or fails on its own, and the result is recorded. |
 | TR-15 | `scheduled` | `wp_schedule_single_event()` returned `false`, or the event is later found missing | `failed` | `_srl_last_error = 'schedule_failed'` or `'event_lost'`, log `failed`, raise notice. §11.6. |
+| TR-16 | `none` (or absent), `cancelled`, or `scheduled` | "Post to X now", confirmed, and the post's status is `publish` | `scheduled` | Set `_srl_enabled` to `1`; clear any pending event; reset `_srl_attempts` and clear `_srl_last_error`, `_srl_sending_since` and the stored media id; write `_srl_scheduled_at = now`; schedule at delay 0 (checking the return, §11.6); log `scheduled` with a message naming the owner. **Never** from `sent`, `sending` or `failed`: the first two are INV-1, and `failed` already has "Repost now". Added by amendment 2. |
+
+**TR-16 notes.** This is the owner's path for a post the automatic trigger never reached: one published before the plugin existed, one skipped by G-6, G-7 or G-8, one published with a switch off, or one cancelled by hand. None of §10.3's guards applies except G-3, which holds because the meta box is registered only for enabled types, and G-1's requirement that the post be published, checked directly. G-4 and G-6 to G-8 exist to detect the *absence* of intent; a confirmed click on one post is that intent. G-9 is not checked either: the failure it predicts surfaces within a minute at delay 0, recorded as `credentials_unreadable` by the publisher, and the meta box already explains that state.
+
+Three details are load-bearing:
+
+1. **`_srl_enabled` is set to `1`.** The button submits the whole meta box form, and `save()` runs first (priority 10, §11.5). If the checkbox was unticked — the default on a site whose master switch is off — `save()` has just stored `0`, and §11.5 part 3 would cancel the send at the next cron run with "Per-post switch was turned off". A confirmed click outranks a checkbox, so the handler overwrites it. TR-10 gains the same side effect because it had the same trap.
+2. **`scheduled` is an accepted origin, and the pending event is cleared first.** The button never renders in `scheduled`, but `save()`'s reconcile step (§11.5) can schedule a fresh post at the *default* delay in the same request that carries the click — a post skipped by G-6 the day before, say. Without this the click would be swallowed by G-5 and the owner who asked for "now" would get "in an hour". Clearing first also keeps the count of events at one and stays clear of the ten-minute duplicate suppression in §11.6.
+3. **`sent` is refused even though "Repost now" would accept it.** The two buttons partition the states so that a stale form — rendered when the post was `none`, submitted after another request sent it — cannot produce a second paid post without the confirmation FR-2.5 requires.
 
 ### 10.3 Scheduling guards
 
@@ -726,7 +740,7 @@ The consequence: the owner unchecks the box, publishes, and the post goes to X a
 
 `wp_schedule_single_event()` returns `false` in at least four situations. The first draft treated every scheduling site as a statement whose result did not matter. *(Review finding 3, blocker.)*
 
-- An identical hook-and-args event is already due within **10 minutes** of the requested timestamp — WordPress's built-in duplicate suppression. This is not theoretical: TR-10 ("Repost now", delay 0) and TR-8 (5-minute backoff) both re-schedule the same hook with the same args, so any residual event for that post id silently swallows the new schedule.
+- An identical hook-and-args event is already due within **10 minutes** of the requested timestamp — WordPress's built-in duplicate suppression. This is not theoretical: TR-10 ("Repost now", delay 0), TR-16 ("Post to X now", delay 0) and TR-8 (5-minute backoff) all re-schedule the same hook with the same args, so any residual event for that post id silently swallows the new schedule.
 - The `pre_schedule_event` filter short-circuits — what host-level cron replacements and cron-control plugins use.
 - The `schedule_event` filter returns a falsey event.
 - The `cron` option write fails.
@@ -814,8 +828,9 @@ The test post is published to the timeline and bills at the URL-free rate of $0.
 | FR-2.3 | Read-only status line | Renders each of Not scheduled / Scheduled for {time} / Sent {time} with a link / Failed with a reason | T-220 |
 | FR-2.4 | "Cancel scheduled post", visible only while `scheduled` | Clears the event and sets `cancelled` | T-230, T-231 |
 | FR-2.5 | "Repost now", visible only when `sent` or `failed`, requiring confirmation | The only path to a second post; resets attempts; schedules at delay 0 | T-240, T-241, T-242 |
+| FR-2.6 | "Post to X now", visible only when the post is `publish` and its status is `none` or `cancelled`, requiring confirmation | A first send for a post the automatic path never reached; sets the per-post switch on; schedules at delay 0 through the scheduler; refused from `sent`, `sending`, `failed` and from any unpublished post. Amendment 2. | T-250, T-251, T-252, T-253 |
 
-Both buttons require a nonce and the `edit_post` capability for the specific post. Times display in the site's timezone; they are stored in UTC.
+All three buttons require a nonce and the `edit_post` capability for the specific post. Times display in the site's timezone; they are stored in UTC.
 
 ### FR-3 Scheduling
 
@@ -976,6 +991,10 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-240 `test_repost_button_visible_only_when_sent_or_failed` | FR-2.5 |
 | T-241 `test_repost_requires_confirmation_and_nonce` | FR-2.5, SEC-3 |
 | T-242 `test_repost_resets_attempts_and_schedules_at_zero_delay` | FR-2.5, TR-10 |
+| T-250 `test_send_now_button_visible_only_for_published_unsent_posts` | FR-2.6 |
+| T-251 `test_send_now_schedules_at_zero_delay_and_sets_the_switch` | FR-2.6, TR-16 |
+| T-252 `test_send_now_is_ignored_from_sent_sending_failed_and_unpublished` | FR-2.6, TR-16, INV-1 |
+| T-253 `test_send_now_replaces_an_event_scheduled_in_the_same_request` | TR-16, §11.5 |
 
 ### 16.4 Scheduling
 
@@ -1172,6 +1191,7 @@ Rows OPEN-7 to OPEN-10 are departures from the brief that were resolved by evide
 | **OPEN-12** | **The test post string is timestamped**, not fixed. Brief FR-1.5 says "a fixed test string". | §13 FR-1.5 | Accept. A fixed string is rejected as a duplicate on the second press, so the owner's only credential check reports failure for a working credential. *(Review finding 21.)* |
 | **OPEN-14** | **Hashtags from post tags**, added after the Specification Gate on the owner's instruction. Brief §3 v0.1 listed hashtag generation as a non-goal. | §7.6, FR-4.13 | **RESOLVED 2026-09-05 — owner asked for it, and then asked for the brief to be amended.** `PROJECTBRIEF.md` is now v0.2: §3 carries amendment 1 and §4 carries FR-4.13, so the spec and the brief agree again. Recorded as **ADR-005**, which keeps the original non-goal wording. Listed here for visibility, like OPEN-7 to OPEN-10, not because it is unresolved. The two premises about how X renders hashtags were **OQ-20**, closed 2026-09-05 by X's own Help Center wording (§7.6.1); they are `[DOC]` rather than `[MEASURED]`, and neither could fail a send either way. |
 | **OPEN-13** | **18 PHP files under `includes/` and `admin/`, against the brief's "target: fewer than 15".** | §5 of the brief | **RESOLVED 2026-09-05 — owner accepted 18.** Reasoning retained below. | **Owner's call.** Three of the extras — `class-crypto.php`, `class-oauth1.php`, `class-text.php` — exist to be WordPress-free so the unit suite can run without Docker. That is not decoration: it is how the three counting defects in §7 were caught, and folding them back into their callers would make them untestable without a database. Two more, `class-post-payload.php` and `class-send-result.php`, are named in the brief's own §5 prose but were given no files. The remaining one is `class-notices.php`. Consolidating to 15 is possible and would cost testability; I did not do it unilaterally because "target" is softer than MUST but is still the owner's number. |
+| **OPEN-15** | **A manual send for any published post**, added after the Specification Gate on the owner's instruction. Brief §1.5 and §2 describe only the automatic trigger. | §10.1 TR-16, §13 FR-2.6 | **RESOLVED 2026-09-05 — owner asked for it, and the brief was amended in the same change.** `PROJECTBRIEF.md` is v0.4: §4 carries amendment 3 and FR-2.6, so the spec and the brief agree. Recorded as **ADR-006**. Listed for visibility, like OPEN-14. |
 
 ### Carried from `OPENQUESTIONS.md`
 

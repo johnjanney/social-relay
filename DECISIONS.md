@@ -253,3 +253,46 @@ This changes nothing about the decision and does not retire the tension it recor
 One item was deliberately **not** fixed at the time: FR-4.5 in the brief still carried `**[UNVERIFIED]**: 280 for standard accounts`, which OQ-3 verified on 2026-09-05. Sweeping every stale marker was a larger job than that amendment and had not been asked for; it was recorded here so the omission was a choice rather than an oversight.
 
 **That omission is now closed.** The owner asked for the sweep immediately afterwards, and the brief is at **v0.3** carrying **amendment 2**, which reconciles every evidence label in the document against what Phase 0 established. Four labels were raised, one was **downgraded** — §1.2's claim that a v2 App must sit inside a Project was marked `[VERIFIED]` and the current documentation no longer supports it, so correcting only the labels that improved would have left the single misleading claim standing. Two labels correctly stay `[UNVERIFIED]` because they are still unknown rather than stale (OQ-1b, OQ-15). No requirement changed. The one instruction the amendment could not simply relabel — §8's `upload.x.com` allowlist, which `SPEC.md` INV-3 contradicts for the reason §1.3 gives — is annotated inline and left visible rather than deleted.
+
+## ADR-006 — Add a manual "Post to X now" for any published post the automatic trigger never reached
+
+**Status:** **accepted** 2026-09-05
+
+**Date:** 2026-09-05
+
+**Context**
+
+- **The brief describes one trigger.** `PROJECTBRIEF.md` §1.5 defines "newly published" as the transition to `publish`, and §2's goal is worded around "each newly published" post. The owner asked on 2026-09-05, after the Specification Gate: "Can we add a feature that enables the website admin to post any WordPress post on X?" Nothing in §3's non-goals forbids it, but nothing in §4 specifies it either, so this is an addition to the brief rather than an override of it. `AGENTS.md` still requires the addition to be stated, which is what this ADR and brief amendment 3 are for.
+- **The plugin already contained most of the mechanism.** "Repost now" (FR-2.5) is a nonce-protected, capability-checked, confirmed click that schedules one cron event at delay 0 and hands the post to the ordinary pipeline. It renders only for `sent` and `failed`. A published post in `none` or `cancelled` — one older than the plugin, one skipped by the import, bulk-edit or freshness guards, one published with a switch off, or one the owner cancelled — had no button at all.
+- **The workaround does not work.** Unpublishing and republishing re-fires the automatic trigger, but the freshness guard G-8 rejects any post more than 24 hours old, by design (review finding 7). So for exactly the posts the owner most wants to send by hand, the only route was editing post meta.
+- **The meta box form and the button share one request.** `save()` runs on `save_post` at priority 10 and stores the "Post to X" checkbox; the button handler runs at 20. On a site whose master switch is off the checkbox defaults unticked, so a confirmed click would store `_srl_enabled = 0` and the publisher's re-read (`SPEC.md` §11.5 part 3) would cancel the send a minute later with "Per-post switch was turned off". `save()`'s reconcile step can also schedule a fresh post at the *default* delay in the same request, after which G-5 would swallow the click. Both are ordering traps, and the second one already applied to "Repost now".
+
+**Decision**
+
+Add a third meta box button, "Post to X now", specified as **FR-2.6** and transition **TR-16**. It renders only when the post's WordPress status is `publish` and its relay status is `none` (or absent) or `cancelled`. It requires a confirmation click, and on submit it takes the same path as "Repost now": clear stale attempt and media meta, write `scheduled` and `_srl_scheduled_at = now`, schedule one event at delay 0 with the return checked, and log `scheduled` with a message naming the owner. INV-2 holds because nothing is sent during the request.
+
+Five sub-decisions, each of which could have gone another way:
+
+1. **Meta box only.** No row action in the posts list and no bulk action. A row action needs a second handler and nonce path for a convenience the meta box already provides; a bulk action is precisely the money-losing flood G-7 exists to prevent. §0.5 of the brief decides this.
+2. **Delay 0, not the configured delay.** The delay exists to give the author a window to fix a typo after publishing. A post the owner is sending by hand, often years after publishing, has had that window. The button says "now" and does what it says; the description under it tells the owner it goes at the next scheduler run.
+3. **The two buttons partition the states.** "Post to X now" is refused from `sent`, `sending` and `failed`, even though "Repost now" would accept `sent` and `failed`. A stale form rendered while the post was unsent and submitted after another request sent it must not produce a second paid post without the confirmation FR-2.5 requires. `failed` goes to "Repost now" because that button's copy is written for the two failure reasons where the post may already be live.
+4. **A confirmed click outranks the checkbox.** Both buttons now set `_srl_enabled` to `1`. The alternative — leaving a confirmed, billed action to be cancelled by a checkbox the owner did not notice — records the outcome honestly but is a trap. TR-10 gains the same side effect because it had the same trap.
+5. **`scheduled` is an accepted origin, with the pending event cleared first.** This is what defeats the reconcile ordering trap and keeps the event count at one, clear of WordPress's ten-minute duplicate suppression (§11.6). The button never renders in `scheduled`; the state is reachable only within the request that carries the click.
+
+The guards in §10.3 are bypassed deliberately, except G-1's requirement that the post be published (checked directly) and G-3 (held by the meta box registering only for enabled types). G-4 and G-6 to G-8 detect the *absence* of intent, and a confirmed click on one post is that intent. G-9 is not checked because the failure it predicts surfaces within a minute at delay 0, recorded as `credentials_unreadable`, in a state the meta box already explains.
+
+**Consequences**
+
+*Easier:* About forty lines of plugin code and no new file, hook, setting, meta key or API call. The pipeline, the compare-and-swap and the error matrix are untouched, so every existing test still bounds the new path. Both manual buttons now share one helper, so a fix to one is a fix to both.
+
+*Harder:* The master switch was never a complete kill switch for manual clicks — "Repost now" already ignored it — and this makes that more visible. The brief's goal sentence now describes only the automatic path, which §1 of the spec says explicitly. And the reconcile step's own behaviour on a later plain Update of a fresh, manually scheduled post — it may move the event back to publish-time-plus-delay if that is more than a minute away — predates this change, applies to "Repost now" equally, and is not fixed here.
+
+**Alternatives rejected**
+
+- *A row action in the posts list.* Rejected for v1 under §0.5: a second entry point and handler for a convenience the meta box already provides.
+- *A bulk action.* Rejected: bulk sending is the failure mode G-7 exists to prevent, and it costs real money with no per-post confirmation.
+- *Honour the configured delay.* Rejected: the delay is a typo window after publishing, not a property of a manual send, and a button labelled "now" that waits an hour is wrong in the way that matters.
+- *Show the button on `failed` too.* Rejected: two buttons for one state, with different copy about whether the post may already be live.
+- *Gate the button on the master switch.* Rejected: "Repost now" does not, and a site owner who has turned the plugin off but wants one post sent by hand is exactly the person clicking. The failure path is recorded if credentials are missing.
+- *Tell the owner to unpublish and republish.* Rejected: G-8 refuses it for anything older than a day, and that refusal is correct.
+

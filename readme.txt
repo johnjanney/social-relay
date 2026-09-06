@@ -16,6 +16,8 @@ Social Relay does one thing. When you publish a post, it waits for the delay you
 
 It posts each post **at most once**. Editing a published post does not post it again. Only the "Repost now" button, which asks for confirmation, will ever produce a second post.
 
+Posts published before the plugin was installed, or ones it skipped, can be sent by hand from the post's edit screen with "Post to X now". Same scheduler, same once-only rule.
+
 **This costs money.** X ended its free API tier for new developers in February 2026. Every post this plugin makes contains a link, and X charges about $0.20 per post containing a link. Twenty posts a month is roughly $4. Five hundred posts a month is roughly $100. You buy credits up front in the X Developer Console. Read INSTALLATION.md before installing.
 
 **Hashtags, if you want them.** Off by default. Turn it on and the plugin appends the post's own tags as hashtags, joining multi-word tags the way X expects: `machine learning` becomes `#MachineLearning`, and `iPhone SE` stays `#iPhoneSE`. It never shortens your title to fit a hashtag in.

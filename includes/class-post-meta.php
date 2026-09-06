@@ -277,8 +277,8 @@ class SRL_Post_Meta {
 	/**
 	 * Handle "Cancel scheduled post" and "Repost now". FR-2.4, FR-2.5.
 	 *
-	 * Runs on save_post, because both buttons submit the editor form. The
-	 * nonce and the edit_post capability are already checked by
+	 * Runs on save_post, because all three buttons submit the editor form.
+	 * The nonce and the edit_post capability are already checked by
 	 * request_has_meta_box().
 	 *
 	 * @param int $post_id Post id.
@@ -297,16 +297,64 @@ class SRL_Post_Meta {
 			return;
 		}
 
-		if ( 'repost' !== $action ) {
+		$status = self::get_status( $post_id );
+
+		if ( 'repost' === $action ) {
+			// The only path to a second post. Reachable from `sent` and
+			// `failed` only, so a scheduled or in-flight post cannot be
+			// duplicated by re-submitting the form.
+			if ( in_array( $status, array( self::STATUS_SENT, self::STATUS_FAILED ), true ) ) {
+				self::schedule_now( $post_id, 'Repost requested by the owner.' );
+			}
 			return;
 		}
 
-		// The only path to a second post. Reachable from `sent` and `failed`
-		// only, so a scheduled or in-flight post cannot be duplicated by
-		// re-submitting the form.
-		if ( ! in_array( self::get_status( $post_id ), array( self::STATUS_SENT, self::STATUS_FAILED ), true ) ) {
+		if ( 'send_now' !== $action ) {
 			return;
 		}
+
+		// A first send for a published post the automatic trigger never
+		// reached (TR-16). The two buttons partition the states: `sent`,
+		// `sending` and `failed` are refused here, so a form rendered while
+		// the post was unsent and submitted after another request sent it
+		// cannot produce a second paid post without FR-2.5's confirmation.
+		$post = get_post( $post_id );
+		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
+			return;
+		}
+		if ( ! in_array( $status, array( self::STATUS_NONE, self::STATUS_CANCELLED, self::STATUS_SCHEDULED ), true ) ) {
+			return;
+		}
+
+		// `scheduled` is accepted because save() runs first on save_post and
+		// its reconcile step can schedule a fresh post at the default delay in
+		// this same request. The owner asked for now, so the pending event is
+		// replaced rather than the click swallowed.
+		if ( self::STATUS_SCHEDULED === $status ) {
+			SRL_Scheduler::clear_send( $post_id );
+		}
+
+		self::schedule_now( $post_id, 'Manual send requested by the owner.' );
+	}
+
+	/**
+	 * Schedule a send at delay 0, from an owner's confirmed click.
+	 *
+	 * Shared by "Repost now" (TR-10) and "Post to X now" (TR-16). The caller
+	 * has already decided the transition is allowed from the current status.
+	 *
+	 * The per-post switch is forced on because the button submits the whole
+	 * meta box form and save() has already stored the checkbox. On a site
+	 * whose master switch is off the box defaults unticked, so without this
+	 * the publisher's re-read (SPEC 11.5, part 3) would cancel the send the
+	 * owner just confirmed. A confirmed click outranks a checkbox.
+	 *
+	 * @param int    $post_id Post id.
+	 * @param string $message Log message.
+	 * @return void
+	 */
+	private static function schedule_now( int $post_id, string $message ): void {
+		update_post_meta( $post_id, self::META_ENABLED, '1' );
 
 		delete_post_meta( $post_id, self::META_ATTEMPTS );
 		delete_post_meta( $post_id, self::META_LAST_ERROR );
@@ -319,7 +367,7 @@ class SRL_Post_Meta {
 		update_post_meta( $post_id, self::META_SCHEDULED_AT, $when );
 
 		if ( SRL_Scheduler::schedule_send( $post_id, $when ) ) {
-			SRL_Log::write( SRL_Log::EVENT_SCHEDULED, $post_id, null, null, 'Repost requested by the owner.', 'x', $when );
+			SRL_Log::write( SRL_Log::EVENT_SCHEDULED, $post_id, null, null, $message, 'x', $when );
 			SRL_Notices::dismiss( $post_id );
 		}
 	}
