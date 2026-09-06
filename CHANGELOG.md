@@ -10,6 +10,19 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] - 2026-09-05
+
+Adds hashtags built from the post's own tags. **MINOR** under `VERSIONING.md`: new
+functionality, and nothing on that document's exhaustive breaking list applies. The
+two new settings keys carry safe defaults, which it names explicitly as not
+breaking, so `srl_settings['schema_version']` stays at 1 and no migration runs.
+
+Still **pre-release in the sense that matters**: no post from this plugin has
+reached X in production, and the `POST /2/tweets` path remains untested against the
+live API (OQ-15, now bundled with OQ-19).
+
 ### Added
 
 - Hashtags built from the post's own tags, off by default and capped at three per
@@ -164,5 +177,6 @@ Phase 7 code review, all 16 findings applied:
 - The plugin has not run for an extended period on a live site. Phase 10 of the
   project plan is a seven-day staging run, and it has not happened.
 
-[Unreleased]: https://github.com/johnjanney/social-relay/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/johnjanney/social-relay/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/johnjanney/social-relay/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/johnjanney/social-relay/releases/tag/v0.1.0
