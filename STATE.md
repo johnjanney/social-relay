@@ -34,11 +34,12 @@ Packaged builds on GitHub. **A release is not the Release Gate.** Each of these 
 
 | Version | Tag on | Date | Change | Notes |
 |---|---|---|---|---|
-| [0.3.0](https://github.com/johnjanney/social-relay/releases/tag/v0.3.0) | `9dea6a2` | 2026-09-05 | Manual "Post to X now" for any published post; both manual buttons now set the per-post switch on | **Latest.** MINOR. PR #6 (feature), PR #7 (bump). 26-file zip with sha256 in the notes. |
+| [0.3.1](https://github.com/johnjanney/social-relay/releases/tag/v0.3.1) | `7bdbc78` | 2026-09-06 | The three meta box buttons become nonce-protected links; they had never worked in the block editor. Confirmations now say unsaved edits are not included | **Latest.** PATCH. PR #9 (fix), PR #11 (bump). **Upgrade from 0.3.0 recommended:** on the default editor, 0.3.0 cannot cancel, repost or send by hand. |
+| [0.3.0](https://github.com/johnjanney/social-relay/releases/tag/v0.3.0) | `9dea6a2` | 2026-09-05 | Manual "Post to X now" for any published post; both manual buttons now set the per-post switch on | MINOR. PR #6 (feature), PR #7 (bump). Shipped with every meta box button dead in the block editor; see 0.3.1. |
 | [0.2.0](https://github.com/johnjanney/social-relay/releases/tag/v0.2.0) | `09ccf1f` | 2026-09-05 | Hashtags from the post's own tags | MINOR. Two new settings keys with safe defaults, no migration. |
 | [0.1.0](https://github.com/johnjanney/social-relay/releases/tag/v0.1.0) | `08fd0ff` | 2026-09-05 | First packaged build | Flagged pre-release, and left that way on purpose. |
 
-Every release so far carries the same caveat in its notes: `POST /2/tweets` is untested against the live API (OQ-15, bundled with OQ-19). Since 0.3.0 that test is one confirmed click away on any existing post.
+Every release so far carries the same caveat in its notes: `POST /2/tweets` is untested against the live API (OQ-15, bundled with OQ-19). Since 0.3.1 that test is one confirmed click away on any existing post, in either editor.
 
 ---
 
@@ -71,7 +72,7 @@ Every release so far carries the same caveat in its notes: `POST /2/tweets` is u
 | PHPStan level 6 | **passing** | `vendor/bin/phpstan analyse` |
 | PHPUnit unit suite | **passing, 45 tests** | `vendor/bin/phpunit --testsuite unit` |
 | PHPUnit integration suite | **passing, 140 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
-| Full suite | **passing, 185 tests, 752 assertions** | run inside the wp-env tests container |
+| Full suite | **passing, 185 tests, 759 assertions** | run inside the wp-env tests container |
 | Test-to-requirement mapping | **142 of 150 (94%)** | `bin/check-test-coverage.sh` |
 | Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
 | Activates on a real site | **yes** | wp-env dev site: table created, defaults written with the switch off, both cron events scheduled |
