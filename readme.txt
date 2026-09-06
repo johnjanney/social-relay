@@ -4,7 +4,7 @@ Tags: x, social, auto-post, scheduling
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.2
-Stable tag: 0.3.0
+Stable tag: 0.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -70,6 +70,9 @@ They are encrypted before being stored in the database, so a stolen database dum
 == Changelog ==
 
 See CHANGELOG.md in the repository for the full history.
+
+= 0.3.1 =
+* Fixed: the three buttons in the post edit screen box ("Cancel scheduled post", "Repost now", "Post to X now") did nothing in the block editor. They work in both editors now.
 
 = 0.3.0 =
 * Added: "Post to X now" on the post edit screen, for a published post the plugin never sent — one older than the plugin, one it skipped, or one you cancelled.

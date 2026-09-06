@@ -3,7 +3,7 @@
  * Plugin Name:       Social Relay
  * Plugin URI:        https://github.com/johnjanney/social-relay
  * Description:       Publishes the title, featured image, and permalink of each newly published post to one X account, after a configurable delay.
- * Version:           0.3.0
+ * Version:           0.3.1
  * Requires at least: 6.5
  * Requires PHP:      8.2
  * Author:            John Janney
@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SRL_VERSION', '0.3.0' );
+define( 'SRL_VERSION', '0.3.1' );
 define( 'SRL_PLUGIN_FILE', __FILE__ );
 define( 'SRL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SRL_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
