@@ -10,9 +10,11 @@ Approved with the open items in §17 noted, and with three decisions recorded at
 **Spec version:** 1.0
 **Date:** 2026-09-05
 **Review:** `reviews/spec-review-1.md` — 4 blocker, 13 major, 11 minor, 1 question. Every finding was accepted; none was declined. The response is summarised in §19.
-**Inputs:** `PROJECTBRIEF.md` v0.1, `DECISIONS.md` ADR-001..004 (all accepted), `OPENQUESTIONS.md` (no blocking row open).
+**Inputs:** `PROJECTBRIEF.md` v0.2 (amendment 1), `DECISIONS.md` ADR-001..005 (all accepted), `OPENQUESTIONS.md` (no blocking row open).
 
 > **Specification Gate — PASSED 2026-09-05.** The marker is at the top of this file. Changes from here on are amendments to an approved specification, and each one says so.
+
+> **Amendment 1 — 2026-09-05.** Hashtags built from the post's own tags, added on the owner's instruction after the gate. It introduces **§7.6**, **FR-4.13**, the two `hashtags_*` rows in §3, the hashtag block in §7.2's composition, and tests **T-441** through **T-449**. `PROJECTBRIEF.md` was amended to v0.2 at the same time, which is why §1's scope statement no longer excludes them and why this is no longer a departure from the brief. Recorded as **ADR-005**; two unverified premises about how X renders hashtags are **OQ-20** and §17's **OPEN-14**.
 
 ---
 
@@ -30,7 +32,9 @@ Approved with the open items in §17 noted, and with three decisions recorded at
 
 **Goal.** Publish the title, featured image, and permalink of each newly published WordPress post to one X account, after a configurable delay, with no duplicate posts and no silent failures.
 
-**Not in scope for v1** (from brief §3, unchanged): other networks; multiple X accounts; OAuth 2.0 PKCE; message templates beyond a prefix and suffix; hashtag generation, AI captions, URL shortening, UTM appending; post types other than `post`; analytics or any read endpoint used for engagement; multisite network activation; a Gutenberg sidebar panel.
+**Not in scope for v1** (from brief §3 as amended, v0.2): other networks; multiple X accounts; OAuth 2.0 PKCE; message templates beyond a prefix and suffix; AI captions, URL shortening, UTM appending; post types other than `post`; analytics or any read endpoint used for engagement; multisite network activation; a Gutenberg sidebar panel.
+
+Hashtags read from the post's own tags were on that list until **amendment 1** and are now in scope; see §7.6 and FR-4.13. Nothing is *generated* — every hashtag is a `post_tag` term the author typed — which is why AI captions remain excluded beside it.
 
 **Target shape.** Fewer than 15 PHP files. No build step. No Composer runtime dependencies. No bundled scheduler.
 
@@ -1164,6 +1168,7 @@ Rows OPEN-7 to OPEN-10 are departures from the brief that were resolved by evide
 | **OPEN-10** | **PHP floor is 8.2**, not the brief's 8.1. | §18 | Resolved by OQ-5 on 2026-09-05. Changes the CI matrix from "PHP 8.1 and latest" to 8.2 and latest. |
 | **OPEN-11** | **X's duplicate-detection window is unmeasured**, and §9.3's INV-1 safety argument depends on it. | §9.3 | Measure in Phase 6: post, delete, repost identical text at 5, 30 and 90 minutes. If the window is shorter than 60 minutes, cap the backoff at the measured value. *(Review finding 26.)* |
 | **OPEN-12** | **The test post string is timestamped**, not fixed. Brief FR-1.5 says "a fixed test string". | §13 FR-1.5 | Accept. A fixed string is rejected as a duplicate on the second press, so the owner's only credential check reports failure for a working credential. *(Review finding 21.)* |
+| **OPEN-14** | **Hashtags from post tags**, added after the Specification Gate on the owner's instruction. Brief §3 v0.1 listed hashtag generation as a non-goal. | §7.6, FR-4.13 | **RESOLVED 2026-09-05 — owner asked for it, and then asked for the brief to be amended.** `PROJECTBRIEF.md` is now v0.2: §3 carries amendment 1 and §4 carries FR-4.13, so the spec and the brief agree again. Recorded as **ADR-005**, which keeps the original non-goal wording. Listed here for visibility, like OPEN-7 to OPEN-10, not because it is unresolved. Two premises about how X renders hashtags stay unverified as **OQ-20**; neither can fail a send. |
 | **OPEN-13** | **18 PHP files under `includes/` and `admin/`, against the brief's "target: fewer than 15".** | §5 of the brief | **RESOLVED 2026-09-05 — owner accepted 18.** Reasoning retained below. | **Owner's call.** Three of the extras — `class-crypto.php`, `class-oauth1.php`, `class-text.php` — exist to be WordPress-free so the unit suite can run without Docker. That is not decoration: it is how the three counting defects in §7 were caught, and folding them back into their callers would make them untestable without a database. Two more, `class-post-payload.php` and `class-send-result.php`, are named in the brief's own §5 prose but were given no files. The remaining one is `class-notices.php`. Consolidating to 15 is possible and would cost testability; I did not do it unilaterally because "target" is softer than MUST but is still the owner's number. |
 
 ### Carried from `OPENQUESTIONS.md`

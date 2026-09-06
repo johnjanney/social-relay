@@ -39,6 +39,13 @@ Every commit that changes behaviour adds its line here in the same commit.
   shows the hashtag block. ADR-005 records the original conflict as it stood at
   decision time rather than being rewritten, and carries an Update noting the
   amendment.
+- `SPEC.md` reconciled with the amended brief: its `Inputs` line now names brief
+  v0.2 and ADR-001..005, §1's "Not in scope" list no longer excludes hashtags, and
+  an **Amendment 1** marker under the Specification Gate names everything the
+  feature introduced — §7.6, FR-4.13, the two `hashtags_*` rows in §3, and tests
+  T-441 through T-449. §17 gains **OPEN-14** for visibility. Without this the spec
+  contradicted itself: §7.6 specified a feature §1 excluded, and §0 makes the spec
+  the implementation contract. Found by review on PR #2.
 
 ## [0.1.0] - 2026-09-05
 
