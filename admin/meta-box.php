@@ -65,41 +65,35 @@ wp_nonce_field( SRL_Post_Meta::NONCE_ACTION, SRL_Post_Meta::NONCE_FIELD );
 
 <?php if ( SRL_Post_Meta::STATUS_SCHEDULED === $srl_status ) : ?>
 	<p>
-		<button
-			type="submit"
+		<a
 			class="button"
-			name="srl_action"
-			value="cancel"
-		><?php esc_html_e( 'Cancel scheduled post', 'social-relay' ); ?></button>
+			href="<?php echo esc_url( SRL_Post_Meta::action_url( $srl_post_id, 'cancel' ) ); ?>"
+		><?php esc_html_e( 'Cancel scheduled post', 'social-relay' ); ?></a>
 	</p>
 <?php endif; ?>
 
 <?php if ( 'publish' === $post->post_status && in_array( $srl_status, array( SRL_Post_Meta::STATUS_NONE, SRL_Post_Meta::STATUS_CANCELLED ), true ) ) : ?>
 	<p>
-		<button
-			type="submit"
+		<a
 			class="button"
-			name="srl_action"
-			value="send_now"
-			onclick="return confirm('<?php echo esc_js( __( 'Post this to X now? This creates a post and is billed.', 'social-relay' ) ); ?>');"
-		><?php esc_html_e( 'Post to X now', 'social-relay' ); ?></button>
+			href="<?php echo esc_url( SRL_Post_Meta::action_url( $srl_post_id, 'send_now' ) ); ?>"
+			onclick="return confirm('<?php echo esc_js( __( 'Post this to X now? This creates a post and is billed. Unsaved edits are not included: save the post first.', 'social-relay' ) ); ?>');"
+		><?php esc_html_e( 'Post to X now', 'social-relay' ); ?></a>
 	</p>
 	<p class="description">
-		<?php esc_html_e( 'For a post that was published before Social Relay was set up, or that was skipped or cancelled. It goes out at the next scheduler run.', 'social-relay' ); ?>
+		<?php esc_html_e( 'For a post that was published before Social Relay was set up, or that was skipped or cancelled. It goes out at the next scheduler run. Save any edits first: the button reloads the page.', 'social-relay' ); ?>
 	</p>
 <?php endif; ?>
 
 <?php if ( in_array( $srl_status, array( SRL_Post_Meta::STATUS_SENT, SRL_Post_Meta::STATUS_FAILED ), true ) ) : ?>
 	<p>
-		<button
-			type="submit"
+		<a
 			class="button"
-			name="srl_action"
-			value="repost"
-			onclick="return confirm('<?php echo esc_js( __( 'Post this to X again? This creates a second post and is billed again.', 'social-relay' ) ); ?>');"
-		><?php esc_html_e( 'Repost now', 'social-relay' ); ?></button>
+			href="<?php echo esc_url( SRL_Post_Meta::action_url( $srl_post_id, 'repost' ) ); ?>"
+			onclick="return confirm('<?php echo esc_js( __( 'Post this to X again? This creates a second post and is billed again. Unsaved edits are not included: save the post first.', 'social-relay' ) ); ?>');"
+		><?php esc_html_e( 'Repost now', 'social-relay' ); ?></a>
 	</p>
 	<p class="description">
-		<?php esc_html_e( 'This is the only way to post the same article twice.', 'social-relay' ); ?>
+		<?php esc_html_e( 'This is the only way to post the same article twice. Save any edits first: the button reloads the page and posts the saved version.', 'social-relay' ); ?>
 	</p>
 <?php endif; ?>

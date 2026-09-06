@@ -44,6 +44,11 @@ class SRL_Post_Meta {
 	public const FIELD_ENABLED = 'srl_enabled';
 	public const FIELD_DELAY   = 'srl_delay_override';
 
+	/** The admin_post action behind the three buttons; the hook is admin_post_{ACTION}. */
+	public const ACTION = 'srl_post_action';
+	/** Nonce action prefix; the post id is appended. */
+	public const ACTION_NONCE = 'srl_post_action_';
+
 	/**
 	 * Current status, treating absent meta as `none`.
 	 *
@@ -275,23 +280,74 @@ class SRL_Post_Meta {
 	}
 
 	/**
-	 * Handle "Cancel scheduled post" and "Repost now". FR-2.4, FR-2.5.
+	 * Build the nonce-protected link behind one of the three action buttons.
 	 *
-	 * Runs on save_post, because all three buttons submit the editor form.
-	 * The nonce and the edit_post capability are already checked by
-	 * request_has_meta_box().
+	 * The buttons are links to admin-post.php, not submit buttons. The block
+	 * editor wraps every classic meta box in a form with onsubmit="return
+	 * false;" and later serialises the fields itself, and a button's name and
+	 * value are never part of that serialisation. So a submit button inside
+	 * the box does nothing at all there, silently. A link works in both
+	 * editors and needs no JavaScript beyond the confirmation.
 	 *
-	 * @param int $post_id Post id.
+	 * @param int    $post_id Post id.
+	 * @param string $action  One of cancel, repost, send_now.
+	 * @return string URL, HTML-escaped by wp_nonce_url().
+	 */
+	public static function action_url( int $post_id, string $action ): string {
+		return wp_nonce_url(
+			add_query_arg(
+				array(
+					'action' => self::ACTION,
+					'post'   => $post_id,
+					'do'     => $action,
+				),
+				admin_url( 'admin-post.php' )
+			),
+			self::ACTION_NONCE . $post_id
+		);
+	}
+
+	/**
+	 * The admin_post handler for the three action links.
+	 *
+	 * Verifies the nonce and the edit_post capability for this specific post,
+	 * performs the action, and returns the owner to the editor. Nothing here
+	 * calls the X API (INV-2): every action ends in a scheduled event or a
+	 * cleared one.
+	 *
 	 * @return void
 	 */
-	public static function handle_action( int $post_id ): void {
-		if ( ! self::request_has_meta_box( $post_id ) ) {
-			return;
+	public static function handle_admin_post(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Verified by check_admin_referer() two lines down.
+		$post_id = isset( $_GET['post'] ) ? absint( wp_unslash( $_GET['post'] ) ) : 0;
+		$action  = isset( $_GET['do'] ) ? sanitize_key( wp_unslash( (string) $_GET['do'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		check_admin_referer( self::ACTION_NONCE . $post_id );
+
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			wp_die( esc_html__( 'You do not have permission to change this post.', 'social-relay' ) );
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified in request_has_meta_box().
-		$action = isset( $_POST['srl_action'] ) ? sanitize_key( wp_unslash( (string) $_POST['srl_action'] ) ) : '';
+		self::perform( $post_id, $action );
 
+		$back = get_edit_post_link( $post_id, 'raw' );
+		wp_safe_redirect( is_string( $back ) && '' !== $back ? $back : admin_url( 'edit.php' ) );
+		exit;
+	}
+
+	/**
+	 * Carry out one of the three owner actions.
+	 *
+	 * Separated from handle_admin_post() so the state change is testable
+	 * without a redirect. The caller has already verified the nonce and the
+	 * capability.
+	 *
+	 * @param int    $post_id Post id.
+	 * @param string $action  One of cancel, repost, send_now. Anything else is ignored.
+	 * @return void
+	 */
+	public static function perform( int $post_id, string $action ): void {
 		if ( 'cancel' === $action ) {
 			SRL_Scheduler::cancel( $post_id, 'Cancelled from the post editor.' );
 			return;
@@ -301,8 +357,8 @@ class SRL_Post_Meta {
 
 		if ( 'repost' === $action ) {
 			// The only path to a second post. Reachable from `sent` and
-			// `failed` only, so a scheduled or in-flight post cannot be
-			// duplicated by re-submitting the form.
+			// `failed` only, so a stale page cannot duplicate a scheduled or
+			// in-flight post.
 			if ( in_array( $status, array( self::STATUS_SENT, self::STATUS_FAILED ), true ) ) {
 				self::schedule_now( $post_id, 'Repost requested by the owner.' );
 			}
@@ -315,8 +371,8 @@ class SRL_Post_Meta {
 
 		// A first send for a published post the automatic trigger never
 		// reached (TR-16). The two buttons partition the states: `sent`,
-		// `sending` and `failed` are refused here, so a form rendered while
-		// the post was unsent and submitted after another request sent it
+		// `sending` and `failed` are refused here, so a page rendered while
+		// the post was unsent and clicked after another request sent it
 		// cannot produce a second paid post without FR-2.5's confirmation.
 		$post = get_post( $post_id );
 		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
@@ -326,10 +382,10 @@ class SRL_Post_Meta {
 			return;
 		}
 
-		// `scheduled` is accepted because save() runs first on save_post and
-		// its reconcile step can schedule a fresh post at the default delay in
-		// this same request. The owner asked for now, so the pending event is
-		// replaced rather than the click swallowed.
+		// `scheduled` is accepted because the page is a snapshot: the post can
+		// have been scheduled by another request since it was rendered. The
+		// owner asked for now, so the pending event is replaced rather than
+		// the click swallowed.
 		if ( self::STATUS_SCHEDULED === $status ) {
 			SRL_Scheduler::clear_send( $post_id );
 		}
@@ -343,11 +399,11 @@ class SRL_Post_Meta {
 	 * Shared by "Repost now" (TR-10) and "Post to X now" (TR-16). The caller
 	 * has already decided the transition is allowed from the current status.
 	 *
-	 * The per-post switch is forced on because the button submits the whole
-	 * meta box form and save() has already stored the checkbox. On a site
-	 * whose master switch is off the box defaults unticked, so without this
-	 * the publisher's re-read (SPEC 11.5, part 3) would cancel the send the
-	 * owner just confirmed. A confirmed click outranks a checkbox.
+	 * The per-post switch is forced on. On a site whose master switch is off
+	 * the checkbox defaults unticked and an earlier save stored '0', so
+	 * without this the publisher's re-read (SPEC 11.5, part 3) would cancel
+	 * the send the owner just confirmed. A confirmed click outranks a
+	 * checkbox.
 	 *
 	 * @param int    $post_id Post id.
 	 * @param string $message Log message.

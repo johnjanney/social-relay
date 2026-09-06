@@ -32,22 +32,36 @@ class ActionsTest extends WP_UnitTestCase {
 	public function tear_down(): void {
 		unset(
 			$_POST[ SRL_Post_Meta::NONCE_FIELD ],
-			$_POST['srl_action'],
 			$_POST[ SRL_Post_Meta::FIELD_ENABLED ],
-			$_POST[ SRL_Post_Meta::FIELD_DELAY ]
+			$_POST[ SRL_Post_Meta::FIELD_DELAY ],
+			$_GET['post'],
+			$_GET['do'],
+			$_REQUEST['_wpnonce']
 		);
 		parent::tear_down();
 	}
 
 	/**
-	 * Put a valid meta box submission in $_POST.
+	 * Drive the admin_post handler for a post without a nonce and return
+	 * whether it refused. check_admin_referer() dies, which the test suite
+	 * turns into WPDieException, so the caller can assert nothing changed.
 	 *
-	 * @param string $action Action value.
-	 * @return void
+	 * @param int    $post_id Post id.
+	 * @param string $action  Action value.
+	 * @return bool True when the handler died before acting.
 	 */
-	private function submit( string $action ): void {
-		$_POST[ SRL_Post_Meta::NONCE_FIELD ] = wp_create_nonce( SRL_Post_Meta::NONCE_ACTION );
-		$_POST['srl_action']                 = $action;
+	private function click_without_nonce( int $post_id, string $action ): bool {
+		$_GET['post'] = (string) $post_id;
+		$_GET['do']   = $action;
+		unset( $_REQUEST['_wpnonce'] );
+
+		try {
+			SRL_Post_Meta::handle_admin_post();
+		} catch ( WPDieException $e ) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/** T-231 */
@@ -63,8 +77,7 @@ class ActionsTest extends WP_UnitTestCase {
 		SRL_Post_Meta::set_status( (int) $post_id, SRL_Post_Meta::STATUS_SCHEDULED );
 		$this->assertTrue( SRL_Scheduler::schedule_send( (int) $post_id, time() + 3600 ) );
 
-		$this->submit( 'cancel' );
-		SRL_Post_Meta::handle_action( (int) $post_id );
+		SRL_Post_Meta::perform( (int) $post_id, 'cancel' );
 
 		$this->assertSame( SRL_Post_Meta::STATUS_CANCELLED, SRL_Post_Meta::get_status( (int) $post_id ) );
 		$this->assertFalse( SRL_Scheduler::has_pending_send( (int) $post_id ) );
@@ -77,8 +90,7 @@ class ActionsTest extends WP_UnitTestCase {
 		SRL_Post_Meta::set_status( (int) $post_id, SRL_Post_Meta::STATUS_SENT );
 		update_post_meta( $post_id, SRL_Post_Meta::META_ATTEMPTS, 4 );
 
-		$this->submit( 'repost' );
-		SRL_Post_Meta::handle_action( (int) $post_id );
+		SRL_Post_Meta::perform( (int) $post_id, 'repost' );
 
 		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
 		$this->assertSame( '', get_post_meta( $post_id, SRL_Post_Meta::META_ATTEMPTS, true ) );
@@ -89,7 +101,7 @@ class ActionsTest extends WP_UnitTestCase {
 
 	/**
 	 * "Repost now" is the only path to a second post, so it must be reachable
-	 * only from sent and failed. Re-submitting the editor form while a send is
+	 * only from sent and failed. A stale page clicked while a send is
 	 * scheduled or in flight must not duplicate it.
 	 */
 	public function test_repost_is_ignored_unless_sent_or_failed(): void {
@@ -99,8 +111,7 @@ class ActionsTest extends WP_UnitTestCase {
 			SRL_Post_Meta::set_status( (int) $post_id, $status );
 			_set_cron_array( array() );
 
-			$this->submit( 'repost' );
-			SRL_Post_Meta::handle_action( (int) $post_id );
+			SRL_Post_Meta::perform( (int) $post_id, 'repost' );
 
 			$this->assertSame( $status, SRL_Post_Meta::get_status( (int) $post_id ), "must be ignored from {$status}" );
 		}
@@ -109,13 +120,11 @@ class ActionsTest extends WP_UnitTestCase {
 	public function test_repost_without_a_nonce_does_nothing(): void {
 		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
 		SRL_Post_Meta::set_status( (int) $post_id, SRL_Post_Meta::STATUS_SENT );
+		_set_cron_array( array() );
 
-		unset( $_POST[ SRL_Post_Meta::NONCE_FIELD ] );
-		$_POST['srl_action'] = 'repost';
-
-		SRL_Post_Meta::handle_action( (int) $post_id );
-
+		$this->assertTrue( $this->click_without_nonce( (int) $post_id, 'repost' ), 'must die on a missing nonce' );
 		$this->assertSame( SRL_Post_Meta::STATUS_SENT, SRL_Post_Meta::get_status( (int) $post_id ) );
+		$this->assertFalse( SRL_Scheduler::has_pending_send( (int) $post_id ) );
 	}
 
 	/**
@@ -133,8 +142,7 @@ class ActionsTest extends WP_UnitTestCase {
 		update_post_meta( $post_id, SRL_Post_Meta::META_ATTEMPTS, 2 );
 		update_post_meta( $post_id, SRL_Post_Meta::META_LAST_ERROR, 'server' );
 
-		$this->submit( 'send_now' );
-		SRL_Post_Meta::handle_action( (int) $post_id );
+		SRL_Post_Meta::perform( (int) $post_id, 'send_now' );
 
 		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
 		$this->assertSame( '1', get_post_meta( $post_id, SRL_Post_Meta::META_ENABLED, true ), 'a confirmed click outranks the checkbox' );
@@ -165,8 +173,7 @@ class ActionsTest extends WP_UnitTestCase {
 			SRL_Post_Meta::set_status( (int) $post_id, $status );
 			_set_cron_array( array() );
 
-			$this->submit( 'send_now' );
-			SRL_Post_Meta::handle_action( (int) $post_id );
+			SRL_Post_Meta::perform( (int) $post_id, 'send_now' );
 
 			$this->assertSame( $status, SRL_Post_Meta::get_status( (int) $post_id ), "must be ignored from {$status}" );
 			$this->assertFalse( SRL_Scheduler::has_pending_send( (int) $post_id ), "no event from {$status}" );
@@ -177,8 +184,7 @@ class ActionsTest extends WP_UnitTestCase {
 			SRL_Post_Meta::set_status( (int) $draft, $status );
 			_set_cron_array( array() );
 
-			$this->submit( 'send_now' );
-			SRL_Post_Meta::handle_action( (int) $draft );
+			SRL_Post_Meta::perform( (int) $draft, 'send_now' );
 
 			$this->assertSame( $status, SRL_Post_Meta::get_status( (int) $draft ), "a draft must be refused from {$status}" );
 			$this->assertFalse( SRL_Scheduler::has_pending_send( (int) $draft ) );
@@ -188,55 +194,26 @@ class ActionsTest extends WP_UnitTestCase {
 	/**
 	 * T-253
 	 *
-	 * Drives the real save_post path. save() runs at priority 10 and its
-	 * reconcile step schedules a fresh, enabled post at the default delay;
-	 * handle_action() at priority 20 must then replace that event with one
-	 * due now, leaving exactly one event. Without this the click is swallowed
-	 * by G-5 and the owner who asked for "now" gets "in an hour".
-	 *
-	 * The admin hooks are not registered in the test context (is_admin() is
-	 * false), so the two callbacks are attached here at the priorities
-	 * SRL_Plugin::register_admin_hooks() uses.
+	 * The edit screen is a snapshot. Between rendering the button and the
+	 * click, another request can have scheduled the post at the default delay
+	 * -- an import finishing, a republish on a second tab. G-5 would swallow
+	 * the click; instead the pending event is replaced with one due now, and
+	 * exactly one event survives, clear of WordPress's ten-minute duplicate
+	 * suppression.
 	 */
-	public function test_send_now_replaces_an_event_scheduled_in_the_same_request(): void {
+	public function test_send_now_replaces_a_pending_event_scheduled_since_render(): void {
 		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
-		delete_post_meta( $post_id, SRL_Post_Meta::META_STATUS );
 		_set_cron_array( array() );
+		SRL_Post_Meta::set_status( (int) $post_id, SRL_Post_Meta::STATUS_SCHEDULED );
+		update_post_meta( $post_id, SRL_Post_Meta::META_SCHEDULED_AT, time() + HOUR_IN_SECONDS );
+		$this->assertTrue( SRL_Scheduler::schedule_send( (int) $post_id, time() + HOUR_IN_SECONDS ) );
 
-		$this->submit( 'send_now' );
-		$_POST[ SRL_Post_Meta::FIELD_ENABLED ] = '1';
-		$_POST[ SRL_Post_Meta::FIELD_DELAY ]   = '60';
-
-		// First, save() alone: proves the reconcile step really does schedule
-		// at the default delay, so the second half is not passing vacuously.
-		add_action( 'save_post', array( SRL_Post_Meta::class, 'save' ), 10, 1 );
-		wp_update_post(
-			array(
-				'ID'         => $post_id,
-				'post_title' => 'Edited once',
-			)
-		);
+		SRL_Post_Meta::perform( (int) $post_id, 'send_now' );
 
 		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
 		$due = (int) wp_next_scheduled( SRL_Scheduler::SEND_HOOK, SRL_Scheduler::event_args( (int) $post_id ) );
-		$this->assertEqualsWithDelta( time() + HOUR_IN_SECONDS, $due, 10, 'save() alone schedules at the override delay' );
-
-		// Now the full path, with the click's handler after save().
-		add_action( 'save_post', array( SRL_Post_Meta::class, 'handle_action' ), 20, 1 );
-		wp_update_post(
-			array(
-				'ID'         => $post_id,
-				'post_title' => 'Edited twice',
-			)
-		);
-
-		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
-		$due = (int) wp_next_scheduled( SRL_Scheduler::SEND_HOOK, SRL_Scheduler::event_args( (int) $post_id ) );
-		$this->assertEqualsWithDelta( time(), $due, 10, 'the click wins over the reconciled default delay' );
+		$this->assertEqualsWithDelta( time(), $due, 10, 'the click wins over the pending default-delay event' );
 		$this->assertSame( 1, $this->count_send_events( (int) $post_id ), 'exactly one event survives' );
-
-		remove_action( 'save_post', array( SRL_Post_Meta::class, 'save' ), 10 );
-		remove_action( 'save_post', array( SRL_Post_Meta::class, 'handle_action' ), 20 );
 	}
 
 	/**
@@ -422,7 +399,7 @@ class ActionsTest extends WP_UnitTestCase {
 	 * The handler must be inert without a nonce, and inert from a status that
 	 * is not sent or failed. The first version of the repost test only checked
 	 * that the rendered HTML contained the nonce field name and the string
-	 * "confirm(" -- it never invoked handle_action() at all, and would have
+	 * "confirm(" -- it never invoked the handler at all, and would have
 	 * passed unchanged if the handler had been deleted.
 	 */
 	public function test_cancel_is_inert_without_a_nonce(): void {
@@ -431,11 +408,7 @@ class ActionsTest extends WP_UnitTestCase {
 		SRL_Post_Meta::set_status( (int) $post_id, SRL_Post_Meta::STATUS_SCHEDULED );
 		SRL_Scheduler::schedule_send( (int) $post_id, time() + 3600 );
 
-		unset( $_POST[ SRL_Post_Meta::NONCE_FIELD ] );
-		$_POST['srl_action'] = 'cancel';
-
-		SRL_Post_Meta::handle_action( (int) $post_id );
-
+		$this->assertTrue( $this->click_without_nonce( (int) $post_id, 'cancel' ), 'must die on a missing nonce' );
 		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );
 		$this->assertTrue( SRL_Scheduler::has_pending_send( (int) $post_id ) );
 	}
@@ -451,8 +424,7 @@ class ActionsTest extends WP_UnitTestCase {
 		update_post_meta( $post_id, SRL_Post_Meta::META_MEDIA_ID, 'old-media-id' );
 		update_post_meta( $post_id, SRL_Post_Meta::META_MEDIA_UPLOADED_AT, time() );
 
-		$this->submit( 'repost' );
-		SRL_Post_Meta::handle_action( (int) $post_id );
+		SRL_Post_Meta::perform( (int) $post_id, 'repost' );
 
 		$this->assertSame( '', get_post_meta( $post_id, SRL_Post_Meta::META_MEDIA_ID, true ) );
 		$this->assertSame( SRL_Post_Meta::STATUS_SCHEDULED, SRL_Post_Meta::get_status( (int) $post_id ) );

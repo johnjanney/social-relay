@@ -77,7 +77,7 @@ If your posts consistently go out late, that is not the delay setting. Ask your 
 
 While the status says **Scheduled**, a **Cancel scheduled post** button appears in the box.
 
-Click it and press Update. The status becomes **Cancelled** and nothing is sent.
+Click it. The page reloads and the status becomes **Cancelled**; nothing is sent.
 
 This is the button to use when you have published something and then thought better of sharing it, or spotted a mistake you want to fix first. It costs nothing.
 
@@ -90,6 +90,8 @@ This is the button to use when you have published something and then thought bet
 Once a post is **Sent** or **Failed**, a **Repost now** button appears.
 
 It asks you to confirm, because it creates a **second, separately billed post**. It sends immediately rather than waiting for the delay.
+
+**Save first.** The button reloads the page and posts the version of the post that is saved. If you have just fixed the typo and not yet pressed Update, the repost goes out with the old title. The confirmation reminds you.
 
 Use it when:
 
@@ -111,7 +113,7 @@ A published post whose status is **Not scheduled** or **Cancelled** has a **Post
 
 It is for the posts the automatic path never touched: everything you published before Social Relay was installed, a post that came in through an import or a bulk edit, one you published with the box unticked and have changed your mind about, or one you cancelled and now want after all.
 
-Click it, confirm, and press Update. It goes out at the next scheduler run rather than after the usual delay, and it is billed like any other post. It ticks the "Post to X" box for you if it was unticked.
+Click it and confirm. The page reloads with the status **Scheduled**, and it goes out at the next scheduler run rather than after the usual delay, billed like any other post. It ticks the "Post to X" box for you if it was unticked. Save any edits first, because the button reloads the page.
 
 It is a first send, so the once-only rule is not affected. The button does not appear on a post that is already **Sent** — for that, and only that, there is "Repost now" — and it does not appear on a draft, because a draft has no public link to send.
 

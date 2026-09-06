@@ -16,6 +16,8 @@ Approved with the open items in §17 noted, and with three decisions recorded at
 
 > **Amendment 1 — 2026-09-05.** Hashtags built from the post's own tags, added on the owner's instruction after the gate. It introduces **§7.6**, **FR-4.13**, the two `hashtags_*` rows in §3, the hashtag block in §7.2's composition, and tests **T-441** through **T-449**. `PROJECTBRIEF.md` was amended to v0.2 at the same time, which is why §1's scope statement no longer excludes them and why this is no longer a departure from the brief. Recorded as **ADR-005**; two unverified premises about how X renders hashtags are **OQ-20** and §17's **OPEN-14**.
 
+> **Amendment 3 — 2026-09-06.** The three meta box buttons become nonce-protected links to an `admin_post` handler, because the block editor's meta box form swallows submit buttons and none of them ever worked there. Found by the owner on a real site the day after 0.3.0 shipped. Changes the mechanism paragraph under §13 FR-2, adds one row to §15.1, and rewrites TR-16's notes 1 and 2, whose original reasoning rested on the `save_post` ordering that no longer applies. No FR, TR or test identifier changes; T-253 is renamed to match what it now proves.
+
 > **Amendment 2 — 2026-09-05.** A manual "Post to X now" for any published post the automatic trigger never sent, added on the owner's instruction after the gate. It introduces **TR-16** in §10.1, **FR-2.6** in §13, tests **T-250** through **T-253** in §16.3, and one sentence in §1. TR-10 gains one side effect at the same time, for the reason given under TR-16. `PROJECTBRIEF.md` was amended to v0.4 (amendment 3, FR-2.6) at the same time, so this is not a departure from the brief. Recorded as **ADR-006** and §17's **OPEN-15**.
 
 ---
@@ -603,8 +605,8 @@ Every row has at least one test in §16.
 
 Three details are load-bearing:
 
-1. **`_srl_enabled` is set to `1`.** The button submits the whole meta box form, and `save()` runs first (priority 10, §11.5). If the checkbox was unticked — the default on a site whose master switch is off — `save()` has just stored `0`, and §11.5 part 3 would cancel the send at the next cron run with "Per-post switch was turned off". A confirmed click outranks a checkbox, so the handler overwrites it. TR-10 gains the same side effect because it had the same trap.
-2. **`scheduled` is an accepted origin, and the pending event is cleared first.** The button never renders in `scheduled`, but `save()`'s reconcile step (§11.5) can schedule a fresh post at the *default* delay in the same request that carries the click — a post skipped by G-6 the day before, say. Without this the click would be swallowed by G-5 and the owner who asked for "now" would get "in an hour". Clearing first also keeps the count of events at one and stays clear of the ten-minute duplicate suppression in §11.6.
+1. **`_srl_enabled` is set to `1`.** On a site whose master switch is off the checkbox defaults unticked, so an earlier save has stored `0`, and §11.5 part 3 would cancel the send at the next cron run with "Per-post switch was turned off". A confirmed click outranks a checkbox, so the handler overwrites it. TR-10 gains the same side effect because it had the same trap.
+2. **`scheduled` is an accepted origin, and the pending event is cleared first.** The button never renders in `scheduled`, but the edit screen is a snapshot: between render and click another request can have scheduled the post at the *default* delay — an import finishing, a republish on a second tab. Without this the click would be swallowed by G-5 and the owner who asked for "now" would get "in an hour". Clearing first also keeps the count of events at one and stays clear of the ten-minute duplicate suppression in §11.6.
 3. **`sent` is refused even though "Repost now" would accept it.** The two buttons partition the states so that a stale form — rendered when the post was `none`, submitted after another request sent it — cannot produce a second paid post without the confirmation FR-2.5 requires.
 
 ### 10.3 Scheduling guards
@@ -832,6 +834,8 @@ The test post is published to the timeline and bills at the URL-free rate of $0.
 
 All three buttons require a nonce and the `edit_post` capability for the specific post. Times display in the site's timezone; they are stored in UTC.
 
+**The buttons are links, not submit buttons.** *(Amendment 3; found by the owner on a real block-editor site.)* The block editor wraps every classic meta box in a form with `onsubmit="return false;"` and later serialises the fields itself, and a button's name and value are never part of that serialisation. A submit button inside the box therefore does nothing there, silently — brief §3's "a classic meta box works in both editors" is true for display and false for buttons, as §11.5 already found it false for ordering. Each button is an `<a class="button">` to `admin-post.php?action=srl_post_action&post={id}&do={cancel|repost|send_now}` with a nonce bound to the post id, handled by `SRL_Post_Meta::handle_admin_post()`, which verifies the nonce and `edit_post`, performs the action, and redirects back to the editor. Nothing in that request calls X (INV-2). The confirmation for the two paid buttons is an `onclick` on the link.
+
 ### FR-3 Scheduling
 
 | ID | Requirement | Acceptance | Tests |
@@ -899,6 +903,7 @@ Implements brief §8. Each is testable, and each has a test in §16.
 |---|---|---|---|---|
 | `transition_post_status` | `( string $new_status, string $old_status, WP_Post $post )` | 10 | **3** | Serves **both** TR-1 (publish → schedule) **and** TR-3 (leaving `publish` → cancel). |
 | `save_post` | `( int $post_id, WP_Post $post, bool $update )` | 10 | 3 | Meta box fields (§11.5). Nonce and `edit_post` checked first. |
+| `admin_post_srl_post_action` | `()` | 10 | 0 | The three meta box buttons (FR-2.4, FR-2.5, FR-2.6). Reads `post` and `do` from the query, `check_admin_referer()` on a per-post nonce, `edit_post`, then redirects to the editor. Listed because it is the mechanism behind three FRs; the settings-page `admin_post_*` handlers are not, being one-screen plumbing. |
 | `srl_send_post` | `( int $post_id )` | 10 | 1 | The single scheduled send. |
 | `srl_heartbeat` | `()` | 10 | 0 | Cron health beat plus the reconciliation scan (§11.3, §11.7). |
 | `srl_prune_log` | `()` | 10 | 0 | Daily log and usage pruning (§5.1, §12). |
@@ -994,7 +999,7 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-250 `test_send_now_button_visible_only_for_published_unsent_posts` | FR-2.6 |
 | T-251 `test_send_now_schedules_at_zero_delay_and_sets_the_switch` | FR-2.6, TR-16 |
 | T-252 `test_send_now_is_ignored_from_sent_sending_failed_and_unpublished` | FR-2.6, TR-16, INV-1 |
-| T-253 `test_send_now_replaces_an_event_scheduled_in_the_same_request` | TR-16, §11.5 |
+| T-253 `test_send_now_replaces_a_pending_event_scheduled_since_render` | TR-16, §11.6 |
 
 ### 16.4 Scheduling
 
