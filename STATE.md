@@ -43,17 +43,17 @@ Current state of the build. Updated in the same commit as the code it describes.
 | PHP syntax, every file | **passing** | `find . -path ./vendor -prune -o -name '*.php' -print0 \| xargs -0 -n1 php -l` |
 | PHPCS (WordPress standard) | **passing** | `vendor/bin/phpcs` |
 | PHPStan level 6 | **passing** | `vendor/bin/phpstan analyse` |
-| PHPUnit unit suite | **passing, 37 tests** | `vendor/bin/phpunit --testsuite unit` |
-| PHPUnit integration suite | **passing, 91 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
-| Full suite | **passing, 128 tests, 504 assertions** | run inside the wp-env tests container |
-| Test-to-requirement mapping | **105 of 134 (78%)** | `bin/check-test-coverage.sh` |
+| PHPUnit unit suite | **passing, 39 tests** | `vendor/bin/phpunit --testsuite unit` |
+| PHPUnit integration suite | **passing, 133 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
+| Full suite | **passing, 172 tests, 686 assertions** | run inside the wp-env tests container |
+| Test-to-requirement mapping | **129 of 137 (94%)** | `bin/check-test-coverage.sh` |
 | Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
 | Activates on a real site | **yes** | wp-env dev site: table created, defaults written with the switch off, both cron events scheduled |
 | End-to-end on a real site | **yes** | published a post → `scheduled` + event created → ran `srl_send_post` → failed gracefully with reason `missing`, log row self-contained |
 | Admin screens render | **yes** | settings page 4,467 bytes with all four panels; meta box renders with nonce and the correct FR-2.5 controls |
 | CI on GitHub | **never run** | no remote is configured |
 
-**Honest gap.** `SPEC.md` §16 names 134 tests. **105 exist (78%).** They cover the three pure-logic units, all nine scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema and its versioning, the meta box save path, the owner actions, the notices, the security requirements, and uninstall. Still unwritten: the image downscale path (this workstation has neither GD nor Imagick, so `wp_get_image_editor()` cannot be exercised here), a few media-response variants, and the remaining admin-render permutations.
+**Honest gap.** `SPEC.md` §16 names 137 tests. **129 exist (94%).** They cover the three pure-logic units, all nine scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema and its versioning, the meta box save path, the owner actions, the notices, the security requirements, and uninstall. Still unwritten: the image downscale path (this workstation has neither GD nor Imagick, so `wp_get_image_editor()` cannot be exercised here), a few media-response variants, and the remaining admin-render permutations.
 
 **CI has never run.** There is no git remote configured, so `.github/workflows/ci.yml` is unexecuted. Everything above was run locally: PHPCS, PHPStan and the unit suite on the workstation, and the full suite inside the wp-env container on PHP 8.2 with WordPress 6.5.
 
@@ -67,6 +67,23 @@ Real defects found by testing against real WordPress, and fixed:
 - The same hole existed on every terminal failure in `apply_result()`.
 
 ---
+
+## Reviews
+
+| Phase | Review | Findings | Outcome |
+|---|---|---|---|
+| 2 | `reviews/spec-review-1.md` | 29 (4 blocker, 13 major, 11 minor, 1 question) | All accepted and applied. None declined, so no ADR was opened. |
+| 7 | `reviews/code-review-1.md` | 16 (1 blocker, 10 major, 5 minor) | All accepted and applied. 13 regression tests reproduce them. |
+
+The Phase 7 blocker is worth remembering: `truncate()` measured with a different
+function than `compose()` budgeted with, so a headline naming four products by
+domain composed to 320 weighted units against a limit of 280. Every such post
+would have been a terminal HTTP 400 and a burned paid call, and it was invisible
+until a title happened to be long enough to truncate.
+
+Finding 16 was about the test suite itself, and it was correct: several tests
+passed for the wrong reason, including the one written for the duplicate-content
+bug, which asserted one level too shallow to see it.
 
 ## Blocked on the owner
 
