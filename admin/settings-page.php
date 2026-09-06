@@ -188,6 +188,35 @@ $srl_usage      = SRL_Usage::for_month( $srl_month );
 		<?php submit_button(); ?>
 	</form>
 
+	<h2><?php esc_html_e( 'Connectivity test', 'social-relay' ); ?></h2>
+	<?php
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reading a redirect marker to choose a message; no state changes here.
+	$srl_test_result = isset( $_GET['srl_test'] ) ? sanitize_key( wp_unslash( (string) $_GET['srl_test'] ) ) : '';
+
+	if ( 'ok' === $srl_test_result ) {
+		printf( '<div class="notice notice-success"><p>%s</p></div>', esc_html__( 'Test post sent. Check your X timeline, and see the log below for the response.', 'social-relay' ) );
+	} elseif ( '' !== $srl_test_result ) {
+		printf(
+			'<div class="notice notice-error"><p>%s</p></div>',
+			sprintf(
+				/* translators: %s: outcome slug */
+				esc_html__( 'The test did not succeed (%s). The response is in the log below.', 'social-relay' ),
+				esc_html( $srl_test_result )
+			)
+		);
+	}
+	?>
+	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+		<input type="hidden" name="action" value="srl_send_test" />
+		<?php wp_nonce_field( 'srl_send_test' ); ?>
+		<p>
+			<button type="submit" class="button"><?php esc_html_e( 'Send test post', 'social-relay' ); ?></button>
+		</p>
+		<p class="description">
+			<?php esc_html_e( 'This posts a short, timestamped message to your X timeline and costs about $0.015. It contains no link, so it is billed at the cheap rate; a real post from this plugin always contains a link and costs about $0.200.', 'social-relay' ); ?>
+		</p>
+	</form>
+
 	<h2><?php esc_html_e( 'Recent activity', 'social-relay' ); ?></h2>
 	<?php
 	$srl_rows = SRL_Log::recent( 50 );

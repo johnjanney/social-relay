@@ -60,6 +60,9 @@ class SRL_Plugin {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'add_meta_boxes', array( SRL_Post_Meta::class, 'add_meta_box' ) );
 		add_action( 'save_post', array( SRL_Post_Meta::class, 'save' ), 10, 1 );
+		// Priority 20: after save(), so a repost reads the meta this request wrote.
+		add_action( 'save_post', array( SRL_Post_Meta::class, 'handle_action' ), 20, 1 );
+		add_action( 'admin_post_srl_send_test', array( $this, 'handle_test_post' ) );
 		add_action( 'admin_notices', array( SRL_Notices::class, 'render' ) );
 	}
 
@@ -113,6 +116,72 @@ class SRL_Plugin {
 				'default'           => SRL_Settings::defaults(),
 			)
 		);
+	}
+
+	/**
+	 * Send the connectivity test post. FR-1.5.
+	 *
+	 * @return void
+	 */
+	public function handle_test_post(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'social-relay' ) );
+		}
+		check_admin_referer( 'srl_send_test' );
+
+		$signer = SRL_Settings::signer();
+
+		if ( null === $signer ) {
+			$state = SRL_Settings::credentials_state();
+			SRL_Log::write( SRL_Log::EVENT_TEST, 0, null, null, 'Credentials unusable: ' . $state );
+			$this->redirect_after_test( 'credentials_' . $state );
+			return;
+		}
+
+		$provider = new SRL_X_Provider( $signer );
+
+		// URL-free, so it bills at $0.015 rather than $0.200 -- and
+		// timestamped, because X rejects a repeated identical post and a fixed
+		// string would report a failure on the second press of the button.
+		$payload = new SRL_Post_Payload(
+			sprintf( 'Social Relay connectivity test %s UTC', gmdate( 'Y-m-d H:i' ) ),
+			''
+		);
+
+		$result = $provider->send( $payload );
+
+		foreach ( $result->endpoints_called as $endpoint ) {
+			SRL_Usage::record( $endpoint );
+		}
+
+		SRL_Log::write(
+			SRL_Log::EVENT_TEST,
+			0,
+			$result->http_status,
+			$result->remote_id,
+			$result->success ? 'Test post sent.' : $result->error_message
+		);
+
+		$this->redirect_after_test( $result->success ? 'ok' : 'failed' );
+	}
+
+	/**
+	 * Return to the settings page with a result marker.
+	 *
+	 * @param string $outcome Result slug.
+	 * @return void
+	 */
+	private function redirect_after_test( string $outcome ): void {
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'     => 'social-relay',
+					'srl_test' => $outcome,
+				),
+				admin_url( 'options-general.php' )
+			)
+		);
+		exit;
 	}
 
 	/**

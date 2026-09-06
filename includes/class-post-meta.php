@@ -177,6 +177,56 @@ class SRL_Post_Meta {
 	}
 
 	/**
+	 * Handle "Cancel scheduled post" and "Repost now". FR-2.4, FR-2.5.
+	 *
+	 * Runs on save_post, because both buttons submit the editor form. The
+	 * nonce and the edit_post capability are already checked by
+	 * request_has_meta_box().
+	 *
+	 * @param int $post_id Post id.
+	 * @return void
+	 */
+	public static function handle_action( int $post_id ): void {
+		if ( ! self::request_has_meta_box( $post_id ) ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified in request_has_meta_box().
+		$action = isset( $_POST['srl_action'] ) ? sanitize_key( wp_unslash( (string) $_POST['srl_action'] ) ) : '';
+
+		if ( 'cancel' === $action ) {
+			SRL_Scheduler::cancel( $post_id, 'Cancelled from the post editor.' );
+			return;
+		}
+
+		if ( 'repost' !== $action ) {
+			return;
+		}
+
+		// The only path to a second post. Reachable from `sent` and `failed`
+		// only, so a scheduled or in-flight post cannot be duplicated by
+		// re-submitting the form.
+		if ( ! in_array( self::get_status( $post_id ), array( self::STATUS_SENT, self::STATUS_FAILED ), true ) ) {
+			return;
+		}
+
+		delete_post_meta( $post_id, self::META_ATTEMPTS );
+		delete_post_meta( $post_id, self::META_LAST_ERROR );
+		delete_post_meta( $post_id, self::META_SENDING_SINCE );
+		delete_post_meta( $post_id, self::META_MEDIA_ID );
+		delete_post_meta( $post_id, self::META_MEDIA_UPLOADED_AT );
+
+		$when = time();
+		self::set_status( $post_id, self::STATUS_SCHEDULED );
+		update_post_meta( $post_id, self::META_SCHEDULED_AT, $when );
+
+		if ( SRL_Scheduler::schedule_send( $post_id, $when ) ) {
+			SRL_Log::write( SRL_Log::EVENT_SCHEDULED, $post_id, null, null, 'Repost requested by the owner.', 'x', $when );
+			SRL_Notices::dismiss( $post_id );
+		}
+	}
+
+	/**
 	 * Human-readable status line for the meta box. FR-2.3.
 	 *
 	 * @param int $post_id Post id.
