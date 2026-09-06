@@ -10,7 +10,18 @@ Every commit that changes behaviour adds its line here in the same commit.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- None of the three meta box buttons did anything in the block editor. "Cancel
+  scheduled post", "Repost now" and "Post to X now" were submit buttons inside the
+  meta box form, and the block editor wraps that form in `onsubmit="return false;"`
+  and serialises only its fields when the post is saved, never a button's name and
+  value. The click showed its confirmation and then nothing happened. They only ever
+  worked in the classic editor. Each is now a link to `admin-post.php` carrying a
+  per-post nonce, handled by `SRL_Post_Meta::handle_admin_post()`, which verifies
+  the nonce and `edit_post`, acts, and returns to the editor. Works in both editors,
+  no JavaScript beyond the existing confirmation. Found by the owner on a real site
+  the day after 0.3.0 shipped; spec amendment 3.
 
 ## [0.3.0] - 2026-09-05
 

@@ -188,7 +188,9 @@ class MetaBoxTest extends WP_UnitTestCase {
 		SRL_Post_Meta::render( get_post( $post_id ) );
 		$html = (string) ob_get_clean();
 
-		$this->assertStringContainsString( SRL_Post_Meta::NONCE_FIELD, $html );
+		$this->assertStringContainsString( SRL_Post_Meta::NONCE_FIELD, $html, 'the field-save nonce is still rendered' );
+		$this->assertStringContainsString( 'do=repost', $html );
+		$this->assertMatchesRegularExpression( '/do=repost[^"]*_wpnonce=[0-9a-f]+/', $html, 'the repost link carries its own nonce' );
 		$this->assertStringContainsString( 'confirm(', $html );
 	}
 
@@ -207,7 +209,9 @@ class MetaBoxTest extends WP_UnitTestCase {
 		delete_post_meta( $post_id, SRL_Post_Meta::META_STATUS );
 		$html = $this->render( (int) $post_id );
 		$this->assertStringContainsString( 'Post to X now', $html, 'published, no status' );
-		$this->assertStringContainsString( 'value="send_now"', $html );
+		$this->assertStringContainsString( 'admin-post.php', $html, 'a link, not a submit button: the block editor swallows submits' );
+		$this->assertStringContainsString( 'do=send_now', $html );
+		$this->assertStringNotContainsString( 'type="submit"', $html );
 		$this->assertStringContainsString( 'confirm(', $html );
 		$this->assertStringNotContainsString( 'Repost now', $html );
 		$this->assertStringNotContainsString( 'Cancel scheduled post', $html );

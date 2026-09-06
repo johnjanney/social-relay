@@ -60,8 +60,9 @@ class SRL_Plugin {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'add_meta_boxes', array( SRL_Post_Meta::class, 'add_meta_box' ) );
 		add_action( 'save_post', array( SRL_Post_Meta::class, 'save' ), 10, 1 );
-		// Priority 20: after save(), so a repost reads the meta this request wrote.
-		add_action( 'save_post', array( SRL_Post_Meta::class, 'handle_action' ), 20, 1 );
+		// The three meta box buttons are links, not submit buttons: the block
+		// editor's meta box form swallows submits. See SRL_Post_Meta::action_url().
+		add_action( 'admin_post_' . SRL_Post_Meta::ACTION, array( SRL_Post_Meta::class, 'handle_admin_post' ) );
 		add_action( 'admin_post_srl_send_test', array( $this, 'handle_test_post' ) );
 		add_action( 'admin_post_srl_check_credentials', array( $this, 'handle_check_credentials' ) );
 		add_action( 'admin_notices', array( SRL_Notices::class, 'render' ) );
