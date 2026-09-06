@@ -22,7 +22,21 @@ Current state of the build. Updated in the same commit as the code it describes.
 
 **OQ-20 closed, OQ-19 escalated — 2026-09-05.** X's Help Center confirms both premises behind the hashtag conversion rules, so `SPEC.md` §7.6.1 now carries the quotations as **[DOC]**. It is not **[MEASURED]**: `help.x.com` refuses automated fetch, so the wording comes from two independent search passes rather than a page read first-hand, and no live post was inspected. OQ-19 went the other way. The documentation evidence got stronger — two pages read directly show an App-centric console with no Project step — but a developer-forum thread titled "No Projects section in console, POST /2/tweets returns 403" argues against closing it, so the row's original claim that nothing in the plugin depends on it is **withdrawn**. If Project membership still gates write endpoints it affects `POST /2/tweets`, the one call the plugin cannot do without and the one Phase 0 never tested (**OQ-15**). OQ-19 and OQ-15 are now one check, settled the first time "Send test post" runs against the real API.
 
-**Manual send for any published post — 2026-09-05.** The owner asked whether the admin could post *any* WordPress post to X. The brief's trigger in §1.5 is the transition to `publish`, and a post older than a day cannot even be re-triggered by unpublishing, because G-8 refuses it. Built as a third meta box button, "Post to X now", visible only on a published post in `none` or `cancelled`; it shares one helper with "Repost now" and schedules at delay 0 through the ordinary pipeline. `PROJECTBRIEF.md` is **v0.4** carrying **amendment 3** and **FR-2.6**; `SPEC.md` carries **amendment 2**, **TR-16**, FR-2.6, tests T-250 to T-253 and **OPEN-15**; **ADR-006** records the five sub-decisions. One behaviour change rides along: both manual buttons now set the per-post switch on, because the meta box form is submitted with the click and an unticked checkbox was cancelling the send the owner had just confirmed. Found while writing T-253, which drives the real `save_post` ordering.
+**Manual send for any published post — 2026-09-05.** The owner asked whether the admin could post *any* WordPress post to X. The brief's trigger in §1.5 is the transition to `publish`, and a post older than a day cannot even be re-triggered by unpublishing, because G-8 refuses it. Built as a third meta box button, "Post to X now", visible only on a published post in `none` or `cancelled`; it shares one helper with "Repost now" and schedules at delay 0 through the ordinary pipeline. `PROJECTBRIEF.md` is **v0.4** carrying **amendment 3** and **FR-2.6**; `SPEC.md` carries **amendment 2**, **TR-16**, FR-2.6, tests T-250 to T-253 and **OPEN-15**; **ADR-006** records the five sub-decisions. One behaviour change rides along: both manual buttons now set the per-post switch on, because the meta box form is submitted with the click and an unticked checkbox was cancelling the send the owner had just confirmed. Found while writing T-253, which drives the real `save_post` ordering. Released as **0.3.0** the same day.
+
+---
+
+## Releases
+
+Packaged builds on GitHub. **A release is not the Release Gate.** Each of these means the code is tagged, zipped, and verified by the suite and CI; none of them means a post has been observed landing on X. The gate table above is the authority on that, and it still reads "not reached".
+
+| Version | Tag on | Date | Change | Notes |
+|---|---|---|---|---|
+| [0.3.0](https://github.com/johnjanney/social-relay/releases/tag/v0.3.0) | `9dea6a2` | 2026-09-05 | Manual "Post to X now" for any published post; both manual buttons now set the per-post switch on | **Latest.** MINOR. PR #6 (feature), PR #7 (bump). 26-file zip with sha256 in the notes. |
+| [0.2.0](https://github.com/johnjanney/social-relay/releases/tag/v0.2.0) | `09ccf1f` | 2026-09-05 | Hashtags from the post's own tags | MINOR. Two new settings keys with safe defaults, no migration. |
+| [0.1.0](https://github.com/johnjanney/social-relay/releases/tag/v0.1.0) | `08fd0ff` | 2026-09-05 | First packaged build | Flagged pre-release, and left that way on purpose. |
+
+Every release so far carries the same caveat in its notes: `POST /2/tweets` is untested against the live API (OQ-15, bundled with OQ-19). Since 0.3.0 that test is one confirmed click away on any existing post.
 
 ---
 
