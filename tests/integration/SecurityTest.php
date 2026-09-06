@@ -167,12 +167,14 @@ class SecurityTest extends WP_UnitTestCase {
 	 * normal operation.
 	 */
 	public function test_plugin_source_contains_no_unguarded_error_log_call(): void {
-		$files = array_merge(
-			glob( SRL_PLUGIN_DIR . 'includes/*.php' ) ?: array(),
-			glob( SRL_PLUGIN_DIR . 'includes/providers/*.php' ) ?: array(),
-			glob( SRL_PLUGIN_DIR . 'admin/*.php' ) ?: array(),
-			array( SRL_PLUGIN_DIR . 'social-relay.php', SRL_PLUGIN_DIR . 'uninstall.php' )
-		);
+		$files = array( SRL_PLUGIN_DIR . 'social-relay.php', SRL_PLUGIN_DIR . 'uninstall.php' );
+
+		foreach ( array( 'includes/*.php', 'includes/providers/*.php', 'admin/*.php' ) as $pattern ) {
+			$found = glob( SRL_PLUGIN_DIR . $pattern );
+			if ( is_array( $found ) ) {
+				$files = array_merge( $files, $found );
+			}
+		}
 
 		foreach ( $files as $file ) {
 			$this->assertStringNotContainsString(

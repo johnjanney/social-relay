@@ -158,7 +158,7 @@ final class OAuth1Test extends TestCase {
 	/**
 	 * T-904
 	 *
-	 * multipart/form-data is a form content type but is NOT
+	 * Note that multipart/form-data is a form content type but is NOT
 	 * application/x-www-form-urlencoded, so its parts are never signed either.
 	 */
 	public function test_multipart_body_is_not_included_in_the_signature(): void {

@@ -58,7 +58,7 @@ class CronHealthTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The observer effect. On a site that has not set DISABLE_WP_CRON, loading
+	 * Demonstrates the observer effect. On a site that has not set DISABLE_WP_CRON, loading
 	 * a wp-admin page runs the heartbeat itself, so a fresh timestamp proves
 	 * nothing about whether cron runs when nobody is looking. The panel must
 	 * never report green in that case, however recent the heartbeat is.
