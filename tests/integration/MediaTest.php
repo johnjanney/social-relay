@@ -154,7 +154,7 @@ class MediaTest extends WP_UnitTestCase {
 	/**
 	 * T-415
 	 *
-	 * data.id is the only field stable across both upload paths.
+	 * Note that data.id is the only field stable across both upload paths.
 	 */
 	public function test_media_id_read_from_data_id_only(): void {
 		$provider = new SRL_X_Provider( SRL_Settings::signer() );
