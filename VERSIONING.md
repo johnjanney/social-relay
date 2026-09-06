@@ -42,14 +42,22 @@ A release candidate uses `X.Y.Z-rc.N` in locations 1, 2 and 4. `readme.txt`'s `S
 
 - **`main` is always releasable.** CI green on `main` is a precondition, not an aspiration.
 - Work happens on branches and merges into `main` via pull request.
-- **CI is expected to block the merge — but it is not currently enforced.** GitHub does not offer branch protection or rulesets on a free plan for a *private* repository, and this repository is private. The API returns `403 Upgrade to GitHub Pro or make this repository public`. So today the rule is a convention the maintainer keeps, not a control the platform applies.
+- **CI blocks the merge, and this is enforced by the platform, not by discipline.** Branch protection on `main` requires all six checks to pass before a merge:
 
-  This is recorded rather than quietly dropped, because a documented rule nobody enforces is worse than an acknowledged one: it invites the assumption that something is checking. Two ways to make it real, whenever it matters:
+  | Required check |
+  |---|
+  | Static analysis and standards |
+  | Unit tests (PHP 8.2) |
+  | Unit tests (PHP 8.4) |
+  | Integration (WP 6.5, PHP 8.2) |
+  | Integration (WP latest, PHP 8.4) |
+  | Secrets and version consistency |
 
-  1. Make the repository public. Branch protection is then available at no cost, which suits a GPL plugin intended for WordPress.org.
-  2. Upgrade to GitHub Pro and keep it private.
+  Also enforced: a branch must be **up to date with `main`** before merging, so a pull request cannot pass against a stale base and break `main` on landing. Force pushes and branch deletion are blocked outright — the two ways `main`'s history gets destroyed by accident.
 
-  Until then, CI still runs on every push and pull request and its result is visible; nothing stops a red merge except the person doing it.
+  **Administrators are deliberately not bound by it.** A solo maintainer locked out of their own `main` by a CI outage has traded one problem for a worse one. The protection is there to catch mistakes, not to be unbypassable; bypassing it is a decision someone makes on purpose, which is the distinction that matters.
+
+  This rule was previously documented and unenforceable — GitHub offers branch protection on a free plan only for public repositories, and this one was private. It became real when the repository was made public on 2026-09-05.
 - Releases are tagged **`vX.Y.Z`**. Release candidates are tagged **`vX.Y.Z-rc.N`**.
 - A tag is created only from a commit where CI is green.
 - CI fails if a version tag exists with no matching `CHANGELOG.md` heading.
