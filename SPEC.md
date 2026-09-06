@@ -1,12 +1,18 @@
 # SPEC.md — Social Relay
 
-**Status:** DRAFT — Phase 2 review complete, all 29 findings accepted and applied. Awaiting the Specification Gate.
-**Spec version:** 1.0-draft.2
+**APPROVED — 2026-09-05, by John Janney (owner).**
+
+Approved with the open items in §17 noted, and with three decisions recorded at the same time: OPEN-4 accepted (add a "Check credentials" control), OPEN-13 accepted (18 plugin files stand).
+
+---
+
+**Status:** APPROVED. Phase 2 review complete, all 29 findings accepted and applied.
+**Spec version:** 1.0
 **Date:** 2026-09-05
 **Review:** `reviews/spec-review-1.md` — 4 blocker, 13 major, 11 minor, 1 question. Every finding was accepted; none was declined. The response is summarised in §19.
 **Inputs:** `PROJECTBRIEF.md` v0.1, `DECISIONS.md` ADR-001..004 (all accepted), `OPENQUESTIONS.md` (no blocking row open).
 
-> **Specification Gate.** When the owner approves this document, they write `APPROVED` and the date at the top of this file. Until then no plugin code is written. This line is the gate marker; do not remove it.
+> **Specification Gate — PASSED 2026-09-05.** The marker is at the top of this file. Changes from here on are amendments to an approved specification, and each one says so.
 
 ---
 
@@ -725,9 +731,12 @@ Each requirement lists its acceptance criteria. The test column names the tests 
 | FR-1.3 | Master switch, default off | A freshly activated, unconfigured plugin schedules nothing on publish | T-112 |
 | FR-1.4 | Optional prefix and suffix, ≤ 60 characters each | 61 weighted characters is rejected; 60 is accepted; weighting per §7 | T-113 |
 | FR-1.5 | "Send test post" button, URL-free, shows the response | Posts a **timestamped** string containing no URL; renders the response body unmodified in content inside `<pre><code>`, passed through `esc_html()`; writes a `test` log row with `post_id = 0` | T-120, T-121, T-122 |
+| FR-1.9 | "Check credentials" button, beside "Send test post" | Calls `GET /2/users/me`; publishes **nothing**; reports the account handle on success and the status on failure; writes a `test` log row with `post_id = 0` | T-123, T-124, T-125 |
 | FR-1.6 | Cron health panel | Green within the threshold, warning beyond it, warning when never set (§11.3) | T-130, T-131, T-132 |
 | FR-1.7 | Usage counter for the current calendar month, by endpoint | Reflects every call including failures (§12) | T-140, T-141 |
 | FR-1.8 | Log of the last 50 rows, newest first, filterable to attempt events (`sent`, `failed`, `retry`) | Each row is self-contained: `post_title`, `scheduled_at`, `sent_at`, `event`, `http_status`, and `remote_id` or the message, all read from the log row itself | T-150, T-151, T-152 |
+
+**FR-1.9 note.** Added 2026-09-05 on the owner's decision (OPEN-4). `GET /2/users/me` costs about $0.010 **[DOC]** against the test post's $0.015, and — the point — it puts nothing on the timeline. It is the control an owner reaches for when they want to know whether the four keys work, which is most of the time. FR-1.5 remains the only thing that proves the *posting* path end to end, and the settings page says which is which so the cheaper button is not mistaken for the fuller check.
 
 **FR-1.5 notes.**
 
@@ -878,6 +887,9 @@ Required response fixtures, per brief §10: 2xx create, 2xx media, 429, 500, 401
 | T-120 `test_test_post_contains_no_url` | FR-1.5 |
 | T-121 `test_test_post_writes_log_row_with_post_id_zero` | FR-1.5, FR-5.1 |
 | T-122 `test_test_post_text_differs_between_invocations` | FR-1.5, review finding 21 |
+| T-123 `test_check_credentials_publishes_nothing` | FR-1.9 |
+| T-124 `test_check_credentials_reports_the_account_handle` | FR-1.9 |
+| T-125 `test_check_credentials_reports_failure_without_posting` | FR-1.9 |
 | T-108 `test_credentials_unreadable_marks_affected_post_failed` | §6.3, review finding 24 |
 | T-130 `test_cron_health_green_within_threshold` | FR-1.6 |
 | T-131 `test_cron_health_warns_beyond_threshold` | FR-1.6 |
@@ -1075,7 +1087,7 @@ Rows OPEN-7 to OPEN-10 are departures from the brief that were resolved by evide
 | **OPEN-1** | Transport errors and timeouts are not covered by FR-4.8..4.11. Specified as retryable, like a 5xx. | §9.2 | Accept. `wp_remote_post()` returns `WP_Error` for DNS, TLS, reset and timeout, and unhandled these fall through to whichever branch is last — a silent failure that INV-5 forbids. |
 | **OPEN-2** | X's pixel limits for `tweet_image` are not pinned. Only the 5 MB byte limit is documented. | §8.2 | Downscale on bytes alone in v1, and record the observed limit during Phase 6 acceptance. Guessing a pixel bound is worse than not enforcing one. |
 | **OPEN-3** | A post stuck in `sending` after a crash has no exit in the brief's state machine. Specified as `failed` reason `stalled` after 15 minutes, with no automatic retry. | §10.2 | Accept. Without it a crashed send is invisible forever. Not auto-retrying is deliberate: a crash mid-send is indistinguishable from a lost response, and retrying risks breaking INV-1. |
-| **OPEN-4** | FR-1.5's "Send test post" publishes publicly and costs $0.015. `GET /2/users/me` proves credentials for about $0.010 without posting. | §8.4 | **Owner's call.** Proposal: keep FR-1.5 exactly as specified, and add a second, quieter "Check credentials" control beside it. This is an addition to the brief, so it is not being made unilaterally. |
+| **OPEN-4** | FR-1.5's "Send test post" publishes publicly and costs $0.015. `GET /2/users/me` proves credentials for about $0.010 without posting. | §8.4 | **RESOLVED 2026-09-05 — owner accepted.** FR-1.5 stands unchanged and a second "Check credentials" control is added beside it as **FR-1.9**. This is an addition to the brief, made on the owner's explicit decision rather than unilaterally. |
 | **OPEN-5** | The create-post path is `/2/tweets` or `/2/posts` (OQ-15). Not probed, because it costs money and publishes. | §8.3 | Hold it in one constant; settle at Phase 6 via FR-1.5. |
 | **OPEN-6** | The cron staleness threshold of 5 minutes assumes Hostinger can run cron every minute (OQ-18). | §11.3 | Keep 5 minutes, as one named constant. Revisit if hPanel's minimum turns out to be 5 minutes, in which case it becomes 15. |
 | **OPEN-7** | **Host allowlist reduced to one host.** Brief §8 requires `api.x.com` **and** `upload.x.com`; INV-3 allows only the first. | INV-3 | Resolved by OQ-13: the full flow was proven against `api.x.com` alone, and `upload.x.com` is the legacy v1.1 host brief §1.3 forbids building on. Listed because it changes a brief MUST. |
@@ -1084,7 +1096,7 @@ Rows OPEN-7 to OPEN-10 are departures from the brief that were resolved by evide
 | **OPEN-10** | **PHP floor is 8.2**, not the brief's 8.1. | §18 | Resolved by OQ-5 on 2026-09-05. Changes the CI matrix from "PHP 8.1 and latest" to 8.2 and latest. |
 | **OPEN-11** | **X's duplicate-detection window is unmeasured**, and §9.3's INV-1 safety argument depends on it. | §9.3 | Measure in Phase 6: post, delete, repost identical text at 5, 30 and 90 minutes. If the window is shorter than 60 minutes, cap the backoff at the measured value. *(Review finding 26.)* |
 | **OPEN-12** | **The test post string is timestamped**, not fixed. Brief FR-1.5 says "a fixed test string". | §13 FR-1.5 | Accept. A fixed string is rejected as a duplicate on the second press, so the owner's only credential check reports failure for a working credential. *(Review finding 21.)* |
-| **OPEN-13** | **18 PHP files under `includes/` and `admin/`, against the brief's "target: fewer than 15".** | §5 of the brief | **Owner's call.** Three of the extras — `class-crypto.php`, `class-oauth1.php`, `class-text.php` — exist to be WordPress-free so the unit suite can run without Docker. That is not decoration: it is how the three counting defects in §7 were caught, and folding them back into their callers would make them untestable without a database. Two more, `class-post-payload.php` and `class-send-result.php`, are named in the brief's own §5 prose but were given no files. The remaining one is `class-notices.php`. Consolidating to 15 is possible and would cost testability; I did not do it unilaterally because "target" is softer than MUST but is still the owner's number. |
+| **OPEN-13** | **18 PHP files under `includes/` and `admin/`, against the brief's "target: fewer than 15".** | §5 of the brief | **RESOLVED 2026-09-05 — owner accepted 18.** Reasoning retained below. | **Owner's call.** Three of the extras — `class-crypto.php`, `class-oauth1.php`, `class-text.php` — exist to be WordPress-free so the unit suite can run without Docker. That is not decoration: it is how the three counting defects in §7 were caught, and folding them back into their callers would make them untestable without a database. Two more, `class-post-payload.php` and `class-send-result.php`, are named in the brief's own §5 prose but were given no files. The remaining one is `class-notices.php`. Consolidating to 15 is possible and would cost testability; I did not do it unilaterally because "target" is softer than MUST but is still the owner's number. |
 
 ### Carried from `OPENQUESTIONS.md`
 

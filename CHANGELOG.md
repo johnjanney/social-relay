@@ -34,6 +34,9 @@ Every commit that changes behaviour adds its line here in the same commit.
 - Send pipeline with an atomic compare-and-swap claim, the 5/15/60-minute retry
   backoff, and media-id reuse across retries.
 - Meta box, settings page, admin notices, and uninstall.
+- "Check credentials" control (FR-1.9): asks X who the stored keys belong to for
+  about $0.010 and publishes nothing, so the owner can verify keys without putting
+  a test message on their timeline.
 
 ### Fixed
 

@@ -63,6 +63,7 @@ class SRL_Plugin {
 		// Priority 20: after save(), so a repost reads the meta this request wrote.
 		add_action( 'save_post', array( SRL_Post_Meta::class, 'handle_action' ), 20, 1 );
 		add_action( 'admin_post_srl_send_test', array( $this, 'handle_test_post' ) );
+		add_action( 'admin_post_srl_check_credentials', array( $this, 'handle_check_credentials' ) );
 		add_action( 'admin_notices', array( SRL_Notices::class, 'render' ) );
 	}
 
@@ -163,6 +164,50 @@ class SRL_Plugin {
 		);
 
 		$this->redirect_after_test( $result->success ? 'ok' : 'failed' );
+	}
+
+	/**
+	 * Check the credentials without publishing anything. FR-1.9.
+	 *
+	 * @return void
+	 */
+	public function handle_check_credentials(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'social-relay' ) );
+		}
+		check_admin_referer( 'srl_check_credentials' );
+
+		$signer = SRL_Settings::signer();
+
+		if ( null === $signer ) {
+			$state = SRL_Settings::credentials_state();
+			SRL_Log::write( SRL_Log::EVENT_TEST, 0, null, null, 'Credential check: ' . $state );
+			$this->redirect_after_test( 'credentials_' . $state );
+			return;
+		}
+
+		$provider = new SRL_X_Provider( $signer );
+		$result   = $provider->verify_credentials();
+
+		foreach ( $result['endpoints'] as $endpoint ) {
+			SRL_Usage::record( $endpoint );
+		}
+
+		SRL_Log::write(
+			SRL_Log::EVENT_TEST,
+			0,
+			$result['http_status'],
+			null,
+			$result['ok'] ? 'Credential check succeeded for @' . $result['handle'] : $result['message']
+		);
+
+		if ( ! $result['ok'] ) {
+			$this->redirect_after_test( 'check_failed' );
+			return;
+		}
+
+		set_transient( 'srl_checked_handle', $result['handle'], 60 );
+		$this->redirect_after_test( 'check_ok' );
 	}
 
 	/**

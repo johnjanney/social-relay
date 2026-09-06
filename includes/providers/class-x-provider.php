@@ -81,6 +81,77 @@ class SRL_X_Provider implements SRL_Provider {
 	}
 
 	/**
+	 * Credential check path. Reads only; publishes nothing.
+	 */
+	public const PATH_ME = '/2/users/me';
+
+	/**
+	 * Verify the credentials without publishing anything. FR-1.9.
+	 *
+	 * Costs about $0.010 as a user read, against $0.015 for a test post, and
+	 * more importantly puts nothing on the timeline. This is the control an
+	 * owner reaches for when they want to know whether the four keys work,
+	 * which is most of the time.
+	 *
+	 * @return array{ok:bool, handle:string, http_status:int|null, message:string, endpoints:array<int,string>}
+	 */
+	public function verify_credentials(): array {
+		$out = array(
+			'ok'          => false,
+			'handle'      => '',
+			'http_status' => null,
+			'message'     => '',
+			'endpoints'   => array(),
+		);
+
+		if ( ! $this->signer->is_complete() ) {
+			$out['message'] = 'Credentials are incomplete.';
+			return $out;
+		}
+
+		$url = self::API_HOST . self::PATH_ME;
+
+		$response = wp_remote_get(
+			$url,
+			array(
+				'timeout' => self::TIMEOUT_CREATE,
+				'headers' => array(
+					'Authorization' => $this->signer->authorization_header( 'GET', $url ),
+				),
+			)
+		);
+
+		$out['endpoints'][] = 'GET ' . self::PATH_ME;
+
+		if ( is_wp_error( $response ) ) {
+			$out['message'] = 'transport: ' . $response->get_error_message();
+			return $out;
+		}
+
+		$status = (int) wp_remote_retrieve_response_code( $response );
+		$body   = (string) wp_remote_retrieve_body( $response );
+
+		$out['http_status'] = $status;
+		$out['message']     = $body;
+
+		if ( $status < 200 || $status >= 300 ) {
+			return $out;
+		}
+
+		$data = json_decode( $body, true );
+
+		if ( ! is_array( $data ) || ! isset( $data['data']['username'] ) ) {
+			$out['message'] = 'malformed_response';
+			return $out;
+		}
+
+		$out['ok']     = true;
+		$out['handle'] = (string) $data['data']['username'];
+
+		return $out;
+	}
+
+	/**
 	 * Publish one post.
 	 *
 	 * @param SRL_Post_Payload $payload What to publish.

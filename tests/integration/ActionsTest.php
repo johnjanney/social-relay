@@ -156,6 +156,120 @@ class ActionsTest extends WP_UnitTestCase {
 		$this->assertNotSame( $first, $second );
 	}
 
+	/**
+	 * T-123
+	 *
+	 * The whole point of FR-1.9: it must not put anything on the timeline.
+	 */
+	public function test_check_credentials_publishes_nothing(): void {
+		$calls = array();
+
+		add_filter(
+			'pre_http_request',
+			function ( $preempt, $args, $url ) use ( &$calls ) {
+				$calls[] = array(
+					'method' => $args['method'] ?? 'GET',
+					'url'    => $url,
+				);
+				return array(
+					'response' => array( 'code' => 200 ),
+					'body'     => wp_json_encode(
+						array(
+							'data' => array(
+								'id'       => '1',
+								'username' => 'perVial_com',
+							),
+						)
+					),
+					'headers'  => array(),
+				);
+			},
+			10,
+			3
+		);
+
+		$provider = new SRL_X_Provider( SRL_Settings::signer() );
+		$provider->verify_credentials();
+
+		$this->assertCount( 1, $calls );
+		$this->assertSame( SRL_X_Provider::API_HOST . SRL_X_Provider::PATH_ME, $calls[0]['url'] );
+		$this->assertStringNotContainsString( '/2/tweets', $calls[0]['url'] );
+	}
+
+	/** T-124 */
+	public function test_check_credentials_reports_the_account_handle(): void {
+		add_filter(
+			'pre_http_request',
+			function () {
+				return array(
+					'response' => array( 'code' => 200 ),
+					'body'     => wp_json_encode(
+						array(
+							'data' => array(
+								'id'       => '2063855447417737216',
+								'name'     => 'perVial',
+								'username' => 'perVial_com',
+							),
+						)
+					),
+					'headers'  => array(),
+				);
+			}
+		);
+
+		$result = ( new SRL_X_Provider( SRL_Settings::signer() ) )->verify_credentials();
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertSame( 'perVial_com', $result['handle'] );
+		$this->assertSame( 200, $result['http_status'] );
+		$this->assertSame( array( 'GET /2/users/me' ), $result['endpoints'] );
+	}
+
+	/** T-125 */
+	public function test_check_credentials_reports_failure_without_posting(): void {
+		add_filter(
+			'pre_http_request',
+			function () {
+				return array(
+					'response' => array( 'code' => 401 ),
+					'body'     => '{"title":"Unauthorized","status":401}',
+					'headers'  => array(),
+				);
+			}
+		);
+
+		$result = ( new SRL_X_Provider( SRL_Settings::signer() ) )->verify_credentials();
+
+		$this->assertFalse( $result['ok'] );
+		$this->assertSame( 401, $result['http_status'] );
+		$this->assertSame( '', $result['handle'] );
+		// Still counted: X bills for failed requests too.
+		$this->assertSame( array( 'GET /2/users/me' ), $result['endpoints'] );
+	}
+
+	/**
+	 * A 2xx that does not carry a username is not a successful check. Reporting
+	 * success there would tell the owner their keys work when nothing was
+	 * proved.
+	 */
+	public function test_check_credentials_rejects_a_2xx_without_a_username(): void {
+		add_filter(
+			'pre_http_request',
+			function () {
+				return array(
+					'response' => array( 'code' => 200 ),
+					'body'     => '<html>captive portal</html>',
+					'headers'  => array(),
+				);
+			}
+		);
+
+		$result = ( new SRL_X_Provider( SRL_Settings::signer() ) )->verify_credentials();
+
+		$this->assertFalse( $result['ok'] );
+		$this->assertSame( 'malformed_response', $result['message'] );
+	}
+
 	/** T-121 */
 	public function test_test_post_writes_log_row_with_post_id_zero(): void {
 		SRL_Log::write( SRL_Log::EVENT_TEST, 0, 201, '1', 'Test post sent.' );

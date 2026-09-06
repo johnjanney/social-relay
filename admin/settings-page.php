@@ -195,6 +195,17 @@ $srl_usage      = SRL_Usage::for_month( $srl_month );
 
 	if ( 'ok' === $srl_test_result ) {
 		printf( '<div class="notice notice-success"><p>%s</p></div>', esc_html__( 'Test post sent. Check your X timeline, and see the log below for the response.', 'social-relay' ) );
+	} elseif ( 'check_ok' === $srl_test_result ) {
+		$srl_handle = (string) get_transient( 'srl_checked_handle' );
+		delete_transient( 'srl_checked_handle' );
+		printf(
+			'<div class="notice notice-success"><p>%s</p></div>',
+			sprintf(
+				/* translators: %s: X account handle */
+				esc_html__( 'Credentials are valid. X reports these keys belong to @%s. Nothing was posted.', 'social-relay' ),
+				esc_html( '' !== $srl_handle ? $srl_handle : '?' )
+			)
+		);
 	} elseif ( '' !== $srl_test_result ) {
 		printf(
 			'<div class="notice notice-error"><p>%s</p></div>',
@@ -206,16 +217,34 @@ $srl_usage      = SRL_Usage::for_month( $srl_month );
 		);
 	}
 	?>
-	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-		<input type="hidden" name="action" value="srl_send_test" />
-		<?php wp_nonce_field( 'srl_send_test' ); ?>
-		<p>
-			<button type="submit" class="button"><?php esc_html_e( 'Send test post', 'social-relay' ); ?></button>
-		</p>
-		<p class="description">
-			<?php esc_html_e( 'This posts a short, timestamped message to your X timeline and costs about $0.015. It contains no link, so it is billed at the cheap rate; a real post from this plugin always contains a link and costs about $0.200.', 'social-relay' ); ?>
-		</p>
-	</form>
+	<table class="form-table" role="presentation">
+		<tr>
+			<th scope="row"><?php esc_html_e( 'Check credentials', 'social-relay' ); ?></th>
+			<td>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="srl_check_credentials" />
+					<?php wp_nonce_field( 'srl_check_credentials' ); ?>
+					<button type="submit" class="button"><?php esc_html_e( 'Check credentials', 'social-relay' ); ?></button>
+					<p class="description">
+						<?php esc_html_e( 'Asks X who these keys belong to. Costs about $0.010 and posts nothing. Use this one when you just want to know the keys work.', 'social-relay' ); ?>
+					</p>
+				</form>
+			</td>
+		</tr>
+		<tr>
+			<th scope="row"><?php esc_html_e( 'Send test post', 'social-relay' ); ?></th>
+			<td>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="srl_send_test" />
+					<?php wp_nonce_field( 'srl_send_test' ); ?>
+					<button type="submit" class="button"><?php esc_html_e( 'Send test post', 'social-relay' ); ?></button>
+					<p class="description">
+						<?php esc_html_e( 'Publishes a short, timestamped message to your X timeline. Costs about $0.015. This is the only check that proves the posting path end to end. It contains no link, so it is billed at the cheap rate; a real post from this plugin always contains a link and costs about $0.200.', 'social-relay' ); ?>
+					</p>
+				</form>
+			</td>
+		</tr>
+	</table>
 
 	<h2><?php esc_html_e( 'Recent activity', 'social-relay' ); ?></h2>
 	<?php
