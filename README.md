@@ -78,8 +78,8 @@ If your site's salts are rotated — routine after a security incident, and some
 | [CHANGELOG.md](CHANGELOG.md) | What changed |
 | [AGENTS.md](AGENTS.md) | Instructions for AI coding agents |
 | `reviews/` | Independent review findings |
-| `INSTALLATION.md` | Not yet written — brief §12 requires it to be written *from* the acceptance run, so every step has actually been performed |
-| `INSTRUCTIONS.md` | Not yet written, for the same reason |
+| [INSTALLATION.md](INSTALLATION.md) | Setting it up, for a site administrator. Each step marked with whether it was actually performed |
+| [INSTRUCTIONS.md](INSTRUCTIONS.md) | Using it, for whoever writes the posts |
 
 ## Status
 

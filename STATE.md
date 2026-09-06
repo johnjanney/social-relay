@@ -105,7 +105,11 @@ bug, which asserted one level too shallow to see it.
 | OQ-1b | cost documentation | The Developer Console credit delta from the 2026-09-05 probe run |
 | OQ-18 | FR-1.6 threshold | Whether Hostinger's hPanel offers every-minute cron |
 | OQ-19 | `INSTALLATION.md` wording | Whether the X console still shows Projects |
-| Phase 6 acceptance | `INSTALLATION.md`, `INSTRUCTIONS.md`, OPEN-5, OPEN-11 | A wp-env or staging site with a sandbox X app |
+| Phase 6 acceptance | upgrading the verification marks in `INSTALLATION.md`, OPEN-5, OPEN-11 | A staging site with a sandbox X app |
 | Phase 10 acceptance | Release Gate | 7 days on the owner's staging site with real cron |
 
-`INSTALLATION.md` and `INSTRUCTIONS.md` are deliberately unwritten: brief §12 requires them to be written *from* the Phase 6 acceptance run, so that every step has actually been performed rather than imagined.
+`INSTALLATION.md` and `INSTRUCTIONS.md` were written on 2026-09-05 at the owner's explicit request, ahead of the Phase 6 acceptance run that brief §12 says should produce them. The concern was raised twice and overruled, which is the owner's call to make.
+
+They are not guesses dressed as instructions. Every step in `INSTALLATION.md` carries a mark — **[PERFORMED]**, **[PARTLY PERFORMED]** or **[NOT PERFORMED]** — saying whether it was actually carried out. Steps 5, 6, 8, 9 and the uninstall section were performed on a real WordPress site, including installing the distributable zip through WordPress's own plugin installer. Steps 1 to 3 are from X's documentation and were not walked. Step 7 is partly performed and says exactly which half.
+
+Every failure reason, status label, button label and numeric limit quoted in both documents was cross-checked against the source. The remaining work at Phase 6 is to walk the unperformed steps and upgrade the marks.
