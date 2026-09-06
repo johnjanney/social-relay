@@ -16,6 +16,8 @@ Current state of the build. Updated in the same commit as the code it describes.
 
 **Note on order.** The owner instructed the build to continue without stopping at gates, so phases 3 to 5 were built while the Specification Gate was still open. The gate has since passed, retroactively covering that work. Nothing in the approved spec required a change to code already written, apart from the FR-1.9 addition the owner asked for at the same time.
 
+**Scope changed after the Specification Gate.** On 2026-09-05 the owner asked for hashtags built from the post's tags. `PROJECTBRIEF.md` §3 lists hashtag generation as a v1 non-goal, so this is a deliberate departure from the approved brief rather than a gap in it. It is built, specified in `SPEC.md` §7.6 as FR-4.13, and recorded as **ADR-005**, which quotes the non-goal it overrides. Two premises about how X renders hashtags are unverified and tracked as **OQ-20**; neither can fail a send.
+
 ---
 
 ## Build units
@@ -35,6 +37,7 @@ Current state of the build. Updated in the same commit as the code it describes.
 | 11 | Notices | **done** | integration tests pending |
 | 12 | Admin screens | **done** | integration tests pending |
 | 13 | Uninstall | **done** | integration tests pending |
+| 14 | Hashtags from post tags | **done** | 8 unit tests, 1 integration test |
 
 ## Verification
 
@@ -43,17 +46,17 @@ Current state of the build. Updated in the same commit as the code it describes.
 | PHP syntax, every file | **passing** | `find . -path ./vendor -prune -o -name '*.php' -print0 \| xargs -0 -n1 php -l` |
 | PHPCS (WordPress standard) | **passing** | `vendor/bin/phpcs` |
 | PHPStan level 6 | **passing** | `vendor/bin/phpstan analyse` |
-| PHPUnit unit suite | **passing, 37 tests** | `vendor/bin/phpunit --testsuite unit` |
-| PHPUnit integration suite | **passing, 135 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
-| Full suite | **passing, 172 tests, 686 assertions** | run inside the wp-env tests container |
-| Test-to-requirement mapping | **129 of 137 (94%)** | `bin/check-test-coverage.sh` |
+| PHPUnit unit suite | **passing, 45 tests** | `vendor/bin/phpunit --testsuite unit` |
+| PHPUnit integration suite | **passing, 136 tests** | `wp-env` + `phpunit --testsuite integration` on PHP 8.2 / WP 6.5 |
+| Full suite | **passing, 181 tests, 717 assertions** | run inside the wp-env tests container |
+| Test-to-requirement mapping | **138 of 146 (94%)** | `bin/check-test-coverage.sh` |
 | Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
 | Activates on a real site | **yes** | wp-env dev site: table created, defaults written with the switch off, both cron events scheduled |
 | End-to-end on a real site | **yes** | published a post → `scheduled` + event created → ran `srl_send_post` → failed gracefully with reason `missing`, log row self-contained |
 | Admin screens render | **yes** | settings page 4,467 bytes with all four panels; meta box renders with nonce and the correct FR-2.5 controls |
 | CI on GitHub | **green** | <https://github.com/johnjanney/social-relay/actions> — all six jobs |
 
-**Honest gap.** `SPEC.md` §16 names 137 tests. **129 exist (94%).** They cover the three pure-logic units, all nine scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema and its versioning, the meta box save path, the owner actions, the notices, the security requirements, and uninstall. Still unwritten: the image downscale path (this workstation has neither GD nor Imagick, so `wp_get_image_editor()` cannot be exercised here), a few media-response variants, and the remaining admin-render permutations.
+**Honest gap.** `SPEC.md` §16 names 146 tests. **138 exist (94%).** They cover the three pure-logic units, all nine scheduling guards, the compare-and-swap claim, the whole error matrix, the log schema and its versioning, the meta box save path, the owner actions, the notices, the security requirements, and uninstall. Still unwritten: the image downscale path (this workstation has neither GD nor Imagick, so `wp_get_image_editor()` cannot be exercised here), a few media-response variants, and the remaining admin-render permutations.
 
 **CI is green.** Repository: <https://github.com/johnjanney/social-relay> (private). All six jobs pass:
 

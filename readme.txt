@@ -18,6 +18,8 @@ It posts each post **at most once**. Editing a published post does not post it a
 
 **This costs money.** X ended its free API tier for new developers in February 2026. Every post this plugin makes contains a link, and X charges about $0.20 per post containing a link. Twenty posts a month is roughly $4. Five hundred posts a month is roughly $100. You buy credits up front in the X Developer Console. Read INSTALLATION.md before installing.
 
+**Hashtags, if you want them.** Off by default. Turn it on and the plugin appends the post's own tags as hashtags, joining multi-word tags the way X expects: `machine learning` becomes `#MachineLearning`, and `iPhone SE` stays `#iPhoneSE`. It never shortens your title to fit a hashtag in.
+
 **The delay needs real cron.** WordPress's built-in scheduler only runs when someone visits your site, so on a quiet site a 60-minute delay can become three hours. The plugin shows you whether cron is actually running, and the installation guide explains the one configuration change that makes the delay accurate.
 
 = What it does not do =
@@ -25,7 +27,7 @@ It posts each post **at most once**. Editing a published post does not post it a
 * Other networks. X only.
 * More than one X account.
 * Message templates. A prefix and a suffix, nothing more.
-* Hashtags, AI captions, link shortening, UTM tags.
+* AI captions, link shortening, UTM tags.
 * Post types other than posts.
 * Analytics or engagement reading.
 * Multisite network activation.
@@ -66,6 +68,9 @@ They are encrypted before being stored in the database, so a stolen database dum
 == Changelog ==
 
 See CHANGELOG.md in the repository for the full history.
+
+= Unreleased =
+* Added: hashtags from the post's tags, off by default, maximum three per post.
 
 = 0.1.0 =
 * Not yet released. In development.

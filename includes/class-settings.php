@@ -43,6 +43,11 @@ class SRL_Settings {
 	public const MAX_AFFIX_WEIGHT = 60;
 
 	/**
+	 * Maximum number of hashtags that may be appended to a post.
+	 */
+	public const MAX_HASHTAG_COUNT = 10;
+
+	/**
 	 * The four credential keys.
 	 */
 	public const CREDENTIAL_KEYS = array( 'api_key', 'api_secret', 'access_token', 'access_token_secret' );
@@ -81,6 +86,11 @@ class SRL_Settings {
 			'prefix'              => '',
 			'suffix'              => '',
 			'email_on_failure'    => false,
+			// Off after install, like the master switch: an existing site's
+			// tag vocabulary was not written with hashtags in mind, and the
+			// owner should see the result before it ships.
+			'hashtags_enabled'    => false,
+			'hashtags_max'        => 3,
 		);
 	}
 
@@ -258,6 +268,22 @@ class SRL_Settings {
 		$clean['schema_version']   = self::SCHEMA_VERSION;
 		$clean['enabled']          = ! empty( $input['enabled'] );
 		$clean['email_on_failure'] = ! empty( $input['email_on_failure'] );
+		$clean['hashtags_enabled'] = ! empty( $input['hashtags_enabled'] );
+
+		$max = isset( $input['hashtags_max'] ) ? absint( $input['hashtags_max'] ) : 3;
+		if ( $max <= self::MAX_HASHTAG_COUNT ) {
+			$clean['hashtags_max'] = $max;
+		} else {
+			add_settings_error(
+				self::OPTION,
+				'srl_hashtags_max',
+				sprintf(
+					/* translators: %d: maximum number of hashtags */
+					__( 'At most %d hashtags may be added to a post. The previous value was kept.', 'social-relay' ),
+					self::MAX_HASHTAG_COUNT
+				)
+			);
+		}
 
 		$unit  = isset( $input['delay_unit'] ) && 'hours' === $input['delay_unit'] ? 'hours' : 'minutes';
 		$value = isset( $input['delay_value'] ) ? absint( $input['delay_value'] ) : 60;

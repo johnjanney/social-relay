@@ -48,6 +48,15 @@ class SRL_Text {
 	public const WORD_BOUNDARY_LOOKBACK = 12;
 
 	/**
+	 * Maximum weighted length of the whole hashtag block.
+	 *
+	 * The same cap the prefix and the suffix carry (SPEC.md section 3), for the
+	 * same reason: fixed text is charged against the title's budget, and an
+	 * uncapped block would leave a post with many tags nothing to say.
+	 */
+	public const MAX_HASHTAG_WEIGHT = 60;
+
+	/**
 	 * Code point ranges that weigh 1. Everything else weighs 2.
 	 *
 	 * From twitter-text v3: ranges with weight 100 against a defaultWeight of
@@ -409,22 +418,152 @@ class SRL_Text {
 	}
 
 	/**
+	 * Turn one WordPress term name into a hashtag.
+	 *
+	 * X ends a hashtag at the first character that is not a letter, digit or
+	 * underscore, so a tag is not merely reformatted here, it is repaired.
+	 * Stripping spaces alone would ship "#co" for the tag "co-op" and "#rock"
+	 * for "rock 'n' roll" -- hashtags that are wrong rather than ugly.
+	 *
+	 * Words are joined in PascalCase, which is the convention on X and the
+	 * form a screen reader can segment; "#machinelearning" is read as one
+	 * unpronounceable run. Capitalisation is applied only to a word the author
+	 * left entirely lower-case, so "iPhone SE" survives as "#iPhoneSE" instead
+	 * of being flattened to "#IphoneSe".
+	 *
+	 * @param string $name Term name, as the author typed it.
+	 * @return string The hashtag including its '#', or '' when the tag cannot
+	 *                produce a usable one.
+	 */
+	public static function hashtag( string $name ): string {
+		$words = preg_split( '/[^\p{L}\p{N}\p{M}_]+/u', self::normalize( trim( $name ) ), -1, PREG_SPLIT_NO_EMPTY );
+
+		if ( ! is_array( $words ) || array() === $words ) {
+			return '';
+		}
+
+		$body = '';
+		foreach ( $words as $word ) {
+			if ( 0 === preg_match( '/\p{Lu}/u', $word ) ) {
+				$word = mb_convert_case( mb_substr( $word, 0, 1 ), MB_CASE_UPPER, 'UTF-8' ) . mb_substr( $word, 1 );
+			}
+			$body .= $word;
+		}
+
+		// X does not linkify a hashtag made only of digits and underscores, so
+		// a tag like "2026" would ship as literal text carrying a stray '#'.
+		// Omitting it is the honest outcome.
+		if ( '' === $body || 1 === preg_match( '/^[\p{N}_]+$/u', $body ) ) {
+			return '';
+		}
+
+		return '#' . $body;
+	}
+
+	/**
+	 * Build the hashtag list for a set of term names.
+	 *
+	 * Duplicates are collapsed case-insensitively, because X treats #WordPress
+	 * and #WordPress as the same hashtag and two terms can normalise onto one.
+	 *
+	 * @param array<int, string> $names Term names, in the order they should appear.
+	 * @param int                $max   Maximum number of hashtags to keep.
+	 * @return array<int, string> Hashtags, each including its '#'.
+	 */
+	public static function hashtags( array $names, int $max ): array {
+		if ( $max <= 0 ) {
+			return array();
+		}
+
+		$out  = array();
+		$seen = array();
+
+		foreach ( $names as $name ) {
+			$tag = self::hashtag( (string) $name );
+			if ( '' === $tag ) {
+				continue;
+			}
+
+			$key = mb_strtolower( $tag );
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+
+			$seen[ $key ] = true;
+			$out[]        = $tag;
+
+			if ( count( $out ) >= $max ) {
+				break;
+			}
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Drop hashtags from the end until the block fits its own cap.
+	 *
+	 * @param array<int, string> $hashtags Candidate hashtags.
+	 * @return array<int, string>
+	 */
+	private static function cap_hashtags( array $hashtags ): array {
+		$kept = array();
+
+		foreach ( $hashtags as $tag ) {
+			$tag = trim( (string) $tag );
+			if ( '' === $tag || '#' === $tag ) {
+				continue;
+			}
+
+			$candidate   = $kept;
+			$candidate[] = $tag;
+
+			// Stop rather than skip, so the block is always a prefix of the
+			// tag order and never silently reorders what the owner sees.
+			if ( self::weighted_length( implode( ' ', $candidate ) ) > self::MAX_HASHTAG_WEIGHT ) {
+				break;
+			}
+
+			$kept[] = $tag;
+		}
+
+		return $kept;
+	}
+
+	/**
+	 * Weighted cost of the hashtag block, including its joining space.
+	 *
+	 * @param array<int, string> $hashtags Hashtags.
+	 * @return int
+	 */
+	private static function hashtag_block_weight( array $hashtags ): int {
+		if ( array() === $hashtags ) {
+			return 0;
+		}
+
+		return self::weighted_length( implode( ' ', $hashtags ) ) + 1;
+	}
+
+	/**
 	 * Compose the post text.
 	 *
-	 * Format: "{prefix} {title} {suffix}\n{permalink}". An absent prefix or
-	 * suffix takes its joining space with it, so the result never carries a
+	 * Format: "{prefix} {title} {suffix} {hashtags}\n{permalink}". An absent
+	 * part takes its joining space with it, so the result never carries a
 	 * leading space or a double space.
 	 *
-	 * @param string $title     Post title.
-	 * @param string $permalink Post permalink. Never truncated.
-	 * @param string $prefix    Optional prefix.
-	 * @param string $suffix    Optional suffix.
+	 * @param string             $title     Post title.
+	 * @param string             $permalink Post permalink. Never truncated.
+	 * @param string             $prefix    Optional prefix.
+	 * @param string             $suffix    Optional suffix.
+	 * @param array<int, string> $hashtags  Optional hashtags, each already
+	 *                                      including its leading '#'.
 	 * @return string
 	 */
-	public static function compose( string $title, string $permalink, string $prefix = '', string $suffix = '' ): string {
-		$prefix = trim( $prefix );
-		$suffix = trim( $suffix );
-		$title  = trim( $title );
+	public static function compose( string $title, string $permalink, string $prefix = '', string $suffix = '', array $hashtags = array() ): string {
+		$prefix   = trim( $prefix );
+		$suffix   = trim( $suffix );
+		$title    = trim( $title );
+		$hashtags = self::cap_hashtags( $hashtags );
 
 		// Measure the permalink rather than assuming 23. X shortens a link
 		// only when its host is valid; a permalink whose host it rejects is
@@ -443,13 +582,28 @@ class SRL_Text {
 			++$fixed;
 		}
 
+		// Hashtags are dropped whole, from the end, until the title fits
+		// without truncation. Two rules meet here. A hashtag cut in half is a
+		// different hashtag, not a shorter one, so the block is never
+		// truncated the way the title is. And a tag the author added is worth
+		// less than the words they wrote, so the block goes before the title
+		// loses anything. A title long enough to truncate on its own sheds
+		// every hashtag first and then behaves exactly as it did before this
+		// feature existed.
+		$title_weight = self::weighted_length( $title );
+		while ( array() !== $hashtags && $title_weight > max( 0, $budget - $fixed - self::hashtag_block_weight( $hashtags ) ) ) {
+			array_pop( $hashtags );
+		}
+
+		$fixed += self::hashtag_block_weight( $hashtags );
+
 		$title_budget = max( 0, $budget - $fixed );
 
 		if ( self::weighted_length( $title ) > $title_budget ) {
 			$title = self::truncate( $title, $title_budget );
 		}
 
-		$out = self::assemble( $prefix, $title, $suffix, $permalink );
+		$out = self::assemble( $prefix, $title, $suffix, $hashtags, $permalink );
 
 		// The guard SPEC section 7.4 step 1 actually asks for: measure the
 		// assembled string, not the parts. Budget arithmetic that is correct
@@ -461,7 +615,7 @@ class SRL_Text {
 		while ( self::weighted_length( $out ) > self::MAX_WEIGHTED && '' !== $title && $guard < 400 ) {
 			--$title_budget;
 			$title = $title_budget > 0 ? self::truncate( $title, $title_budget ) : '';
-			$out   = self::assemble( $prefix, $title, $suffix, $permalink );
+			$out   = self::assemble( $prefix, $title, $suffix, $hashtags, $permalink );
 			++$guard;
 		}
 
@@ -471,15 +625,16 @@ class SRL_Text {
 	/**
 	 * Join the parts, omitting any that are empty.
 	 *
-	 * @param string $prefix    Optional prefix.
-	 * @param string $title     Title, possibly truncated.
-	 * @param string $suffix    Optional suffix.
-	 * @param string $permalink Permalink, or empty for a post with no link.
+	 * @param string             $prefix    Optional prefix.
+	 * @param string             $title     Title, possibly truncated.
+	 * @param string             $suffix    Optional suffix.
+	 * @param array<int, string> $hashtags  Hashtags that survived the budget.
+	 * @param string             $permalink Permalink, or empty for a post with no link.
 	 * @return string
 	 */
-	private static function assemble( string $prefix, string $title, string $suffix, string $permalink ): string {
+	private static function assemble( string $prefix, string $title, string $suffix, array $hashtags, string $permalink ): string {
 		$pieces = array();
-		foreach ( array( $prefix, $title, $suffix ) as $piece ) {
+		foreach ( array( $prefix, $title, $suffix, implode( ' ', $hashtags ) ) as $piece ) {
 			if ( '' !== $piece ) {
 				$pieces[] = $piece;
 			}

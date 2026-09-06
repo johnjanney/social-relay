@@ -236,6 +236,36 @@ class PublisherTest extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Corrected Title', $body );
 	}
 
+	/** T-449 */
+	public function test_post_tags_become_hashtags_at_send_time(): void {
+		$settings                     = (array) get_option( SRL_Settings::OPTION );
+		$settings['hashtags_enabled'] = true;
+		$settings['hashtags_max']     = 2;
+		update_option( SRL_Settings::OPTION, $settings );
+
+		$post_id = $this->scheduled_post();
+		wp_set_post_terms( $post_id, array( 'machine learning', 'co-op', 'third tag' ), 'post_tag' );
+
+		SRL_Publisher::run( $post_id );
+
+		$body = (string) $this->requests[0]['args']['body'];
+		$this->assertStringContainsString( '#CoOp', $body );
+		$this->assertStringContainsString( '#MachineLearning', $body );
+		// The count cap holds against what the taxonomy returns, whatever
+		// order that is, so exactly two of the three tags ship.
+		$this->assertStringNotContainsString( '#ThirdTag', $body );
+
+		// With the setting off, the same post carries no hashtag at all.
+		$settings['hashtags_enabled'] = false;
+		update_option( SRL_Settings::OPTION, $settings );
+
+		$this->requests = array();
+		SRL_Post_Meta::set_status( $post_id, SRL_Post_Meta::STATUS_SCHEDULED );
+		SRL_Publisher::run( $post_id );
+
+		$this->assertStringNotContainsString( '#', (string) $this->requests[0]['args']['body'] );
+	}
+
 	/** T-450 */
 	public function test_429_retries_with_five_minute_backoff(): void {
 		$this->responses = array( $this->status( 429 ) );

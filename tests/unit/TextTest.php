@@ -188,4 +188,93 @@ final class TextTest extends TestCase {
 		}
 		$this->assertLessThanOrEqual( SRL_Text::MAX_WEIGHTED, SRL_Text::weighted_length( $out ) );
 	}
+
+	/** T-441 */
+	public function test_multi_word_tag_becomes_pascal_case_hashtag(): void {
+		$this->assertSame( '#MachineLearning', SRL_Text::hashtag( 'machine learning' ) );
+		$this->assertSame( '#SmallBusinessAdvice', SRL_Text::hashtag( 'small   business  advice' ) );
+		// A tag the author typed entirely in lower case gets its first letter
+		// only; nothing here guesses at word boundaries inside a single word.
+		$this->assertSame( '#Photography', SRL_Text::hashtag( '  photography  ' ) );
+	}
+
+	/** T-442 */
+	public function test_existing_capitalisation_in_a_tag_is_preserved(): void {
+		// Upper-casing every word unconditionally would produce #IphoneSe,
+		// which is a different hashtag from the one the author meant.
+		$this->assertSame( '#iPhoneSE', SRL_Text::hashtag( 'iPhone SE' ) );
+		$this->assertSame( '#eBayDeals', SRL_Text::hashtag( 'eBay deals' ) );
+		$this->assertSame( '#SEO', SRL_Text::hashtag( 'SEO' ) );
+	}
+
+	/** T-443 */
+	public function test_punctuation_inside_a_tag_is_removed_not_left_to_truncate_the_hashtag(): void {
+		// X ends a hashtag at the first character outside its alphabet, so
+		// leaving the punctuation in ships #co for a tag that read "co-op".
+		$this->assertSame( '#CoOp', SRL_Text::hashtag( 'co-op' ) );
+		$this->assertSame( '#RockNRoll', SRL_Text::hashtag( "rock 'n' roll" ) );
+		$this->assertSame( '#Web20', SRL_Text::hashtag( 'Web 2.0' ) );
+	}
+
+	/** T-444 */
+	public function test_all_digit_tag_produces_no_hashtag(): void {
+		$this->assertSame( '', SRL_Text::hashtag( '2026' ) );
+		$this->assertSame( '', SRL_Text::hashtag( '2026_' ) );
+		$this->assertSame( '', SRL_Text::hashtag( '   ' ) );
+		$this->assertSame( '', SRL_Text::hashtag( '!!!' ) );
+		// A digit is fine as long as a letter is present somewhere.
+		$this->assertSame( '#Top10', SRL_Text::hashtag( 'top 10' ) );
+	}
+
+	/** T-445 */
+	public function test_hashtags_are_deduplicated_case_insensitively_and_capped_by_count(): void {
+		$this->assertSame(
+			array( '#MachineLearning', '#WordPress', '#CoOp' ),
+			SRL_Text::hashtags( array( 'Machine Learning', 'machine-learning', 'WordPress', 'wordpress', '2026', 'co-op', 'Extra Tag' ), 3 )
+		);
+		$this->assertSame( array(), SRL_Text::hashtags( array( 'anything' ), 0 ) );
+	}
+
+	/** T-446 */
+	public function test_hashtag_block_is_capped_at_sixty_weighted(): void {
+		$tags = array( '#' . str_repeat( 'a', 30 ), '#' . str_repeat( 'b', 29 ), '#' . str_repeat( 'c', 30 ) );
+
+		$out = SRL_Text::compose( 'Title', 'https://example.com/p/', '', '', $tags );
+
+		// 31 + 1 + 30 = 62 is over the cap, so the second tag cannot join the
+		// first, and the third is not promoted past it.
+		$this->assertStringContainsString( $tags[0], $out );
+		$this->assertStringNotContainsString( $tags[1], $out );
+		$this->assertStringNotContainsString( $tags[2], $out );
+	}
+
+	/** T-447 */
+	public function test_hashtags_are_dropped_whole_before_the_title_is_truncated(): void {
+		$tags = array( '#MachineLearning', '#WordPress' );
+		$long = str_repeat( 'word ', 100 );
+
+		$out = SRL_Text::compose( $long, 'https://example.com/p/', '', '', $tags );
+
+		// No fragment of either hashtag survives, and the title truncates
+		// exactly as it did before hashtags existed.
+		$this->assertStringNotContainsString( '#', $out );
+		$this->assertSame( SRL_Text::compose( $long, 'https://example.com/p/' ), $out );
+
+		// The shorter tag alone still fits a title that only just overflows.
+		// 230 exceeds the 227 left by both tags but not the 239 left by one.
+		$fits = SRL_Text::compose( str_repeat( 'a', 230 ), 'https://example.com/p/', '', '', $tags );
+		$this->assertStringContainsString( '#MachineLearning', $fits );
+		$this->assertStringNotContainsString( '#WordPress', $fits );
+		$this->assertLessThanOrEqual( SRL_Text::MAX_WEIGHTED, SRL_Text::weighted_length( $fits ) );
+	}
+
+	/** T-448 */
+	public function test_hashtags_appear_after_the_suffix_and_before_the_url(): void {
+		$out = SRL_Text::compose( 'My Title', 'https://example.com/p/', 'New:', 'on the blog', array( '#MachineLearning', '#CoOp' ) );
+
+		$this->assertSame( "New: My Title on the blog #MachineLearning #CoOp\nhttps://example.com/p/", $out );
+
+		// An empty hashtag list takes its joining space with it.
+		$this->assertSame( "My Title\nhttps://example.com/p/", SRL_Text::compose( 'My Title', 'https://example.com/p/', '', '', array() ) );
+	}
 }
