@@ -24,7 +24,7 @@ fi
 WP_TESTS_DIR=${WP_TESTS_DIR-/tmp/wordpress-tests-lib}
 WP_CORE_DIR=${WP_CORE_DIR-/tmp/wordpress}
 
-download() { curl -sSL -o "$2" "$1"; }
+download() { curl -fsSL -o "$2" "$1"; }
 
 # Resolve the version to a concrete tag, so the test suite and core match.
 if [ "$WP_VERSION" = 'latest' ]; then
@@ -65,16 +65,71 @@ install_wp() {
     download https://raw.githubusercontent.com/markoheijnen/wp-mysqli/master/db.php "$WP_CORE_DIR/wp-content/db.php"
 }
 
+# Fetch the test suite from the wordpress-develop GitHub mirror as a tarball.
+#
+# The canonical instructions use `svn co` from develop.svn.wordpress.org, and
+# GitHub's ubuntu runners no longer ship Subversion -- the first CI run failed
+# with "svn: command not found". Installing it would work, but a tarball has no
+# external dependency at all, is faster, and behaves identically on a
+# workstation. svn remains the fallback if the download fails and svn happens
+# to be present.
+install_test_suite_from_tarball() {
+    local ref archive tmp root
+    tmp=$(mktemp -d)
+
+    # A three-part version is a tag; a two-part version is a branch.
+    if [ "$WP_VERSION" = 'trunk' ]; then
+        ref='refs/heads/trunk'
+    elif [[ "$WP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        ref="refs/tags/${WP_VERSION}"
+    else
+        ref="refs/heads/${WP_VERSION}"
+    fi
+
+    archive="https://github.com/WordPress/wordpress-develop/archive/${ref}.tar.gz"
+    echo "Fetching the test suite from $archive"
+
+    if ! download "$archive" "$tmp/develop.tar.gz"; then
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    tar -xzf "$tmp/develop.tar.gz" -C "$tmp" || { rm -rf "$tmp"; return 1; }
+
+    root=$(find "$tmp" -maxdepth 1 -type d -name 'wordpress-develop-*' | head -1)
+    [ -d "$root/tests/phpunit/includes" ] || { rm -rf "$tmp"; return 1; }
+
+    rm -rf "$WP_TESTS_DIR/includes" "$WP_TESTS_DIR/data"
+    cp -R "$root/tests/phpunit/includes" "$WP_TESTS_DIR/includes"
+    cp -R "$root/tests/phpunit/data"     "$WP_TESTS_DIR/data"
+    cp "$root/wp-tests-config-sample.php" "$WP_TESTS_DIR/wp-tests-config-sample.php"
+
+    rm -rf "$tmp"
+    return 0
+}
+
 install_test_suite() {
     mkdir -p "$WP_TESTS_DIR"
+
     if [ ! -d "$WP_TESTS_DIR/includes" ]; then
-        echo "Fetching the test suite ($WP_TESTS_TAG)"
-        svn co --quiet "https://develop.svn.wordpress.org/${WP_TESTS_TAG}/tests/phpunit/includes/" "$WP_TESTS_DIR/includes"
-        svn co --quiet "https://develop.svn.wordpress.org/${WP_TESTS_TAG}/tests/phpunit/data/"     "$WP_TESTS_DIR/data"
+        if ! install_test_suite_from_tarball; then
+            echo "Tarball fetch failed; falling back to svn."
+            command -v svn >/dev/null 2>&1 || {
+                echo "ERROR: neither the tarball nor svn is available." >&2
+                exit 2
+            }
+            svn co --quiet "https://develop.svn.wordpress.org/${WP_TESTS_TAG}/tests/phpunit/includes/" "$WP_TESTS_DIR/includes"
+            svn co --quiet "https://develop.svn.wordpress.org/${WP_TESTS_TAG}/tests/phpunit/data/"     "$WP_TESTS_DIR/data"
+        fi
     fi
 
     if [ ! -f "$WP_TESTS_DIR/wp-tests-config.php" ]; then
-        download "https://develop.svn.wordpress.org/${WP_TESTS_TAG}/wp-tests-config-sample.php" "$WP_TESTS_DIR/wp-tests-config.php"
+        if [ -f "$WP_TESTS_DIR/wp-tests-config-sample.php" ]; then
+            cp "$WP_TESTS_DIR/wp-tests-config-sample.php" "$WP_TESTS_DIR/wp-tests-config.php"
+        else
+            download "https://develop.svn.wordpress.org/${WP_TESTS_TAG}/wp-tests-config-sample.php" "$WP_TESTS_DIR/wp-tests-config.php"
+        fi
+
         cfg="$WP_TESTS_DIR/wp-tests-config.php"
         sed -i "s:dirname( __FILE__ ) . '/src/':'$WP_CORE_DIR/':" "$cfg"
         sed -i "s/youremptytestdbnamehere/$DB_NAME/" "$cfg"
