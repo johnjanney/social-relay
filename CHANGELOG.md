@@ -57,7 +57,11 @@ Every commit that changes behaviour adds its line here in the same commit.
   `[UNVERIFIED]` on purpose — they are unknown, not stale (OQ-1b, OQ-15). §8's
   `upload.x.com` allowlist is annotated inline rather than rewritten, since
   `SPEC.md` INV-3 already contradicts it and the original instruction is worth
-  keeping visible. No requirement changed.
+  keeping visible. §12's `AGENTS.md` and `INSTALLATION.md` templates are annotated
+  the same way: they repeat the forbidden host and the unconditional Project step,
+  and §12 prescribes revising both documents after Phase 8, so an unannotated
+  template would regress two files that are currently correct. No requirement
+  changed.
 
 ## [0.1.0] - 2026-09-05
 
