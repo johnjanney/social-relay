@@ -16,7 +16,7 @@ Current state of the build. Updated in the same commit as the code it describes.
 
 **Note on order.** The owner instructed the build to continue without stopping at gates, so phases 3 to 5 were built while the Specification Gate was still open. The gate has since passed, retroactively covering that work. Nothing in the approved spec required a change to code already written, apart from the FR-1.9 addition the owner asked for at the same time.
 
-**Scope changed after the Specification Gate.** On 2026-09-05 the owner asked for hashtags built from the post's tags. `PROJECTBRIEF.md` §3 lists hashtag generation as a v1 non-goal, so this is a deliberate departure from the approved brief rather than a gap in it. It is built, specified in `SPEC.md` §7.6 as FR-4.13, and recorded as **ADR-005**, which quotes the non-goal it overrides. Two premises about how X renders hashtags are unverified and tracked as **OQ-20**; neither can fail a send.
+**Scope changed after the Specification Gate.** On 2026-09-05 the owner asked for hashtags built from the post's tags. `PROJECTBRIEF.md` §3 listed hashtag generation as a v1 non-goal, so this was a deliberate departure from the approved brief rather than a gap in it. It is built, specified in `SPEC.md` §7.6 as FR-4.13, recorded as **ADR-005**, and merged to `main` as `7848ef3` with all CI checks green. The owner then asked for the brief itself to be updated: `PROJECTBRIEF.md` is now at version **0.2** carrying **Amendment 1**, which removes hashtags from the non-goals, quotes the original wording, and adds FR-4.13. `README.md` is corrected to match. Two premises about how X renders hashtags are unverified and tracked as **OQ-20**; neither can fail a send.
 
 ---
 

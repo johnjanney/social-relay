@@ -30,10 +30,15 @@ Every commit that changes behaviour adds its line here in the same commit.
   end, whenever they would not fit; the title is never shortened to make room for
   one, and a title long enough to truncate on its own produces text identical to
   what it produced before this feature existed.
-- `readme.txt` no longer lists hashtags under "What it does not do".
-  `PROJECTBRIEF.md` §3 still lists hashtag generation as a v1 non-goal; the owner
-  asked for the feature anyway, and ADR-005 records the conflict rather than
-  resolving it silently.
+- `readme.txt` and `README.md` no longer list hashtags under "What it does not do",
+  and `README.md` gains a section describing the feature.
+- `PROJECTBRIEF.md` is amended to version **0.2**. §3 "Non-goals for v1" carries
+  **Amendment 1**, which removes hashtags from the list, quotes the original
+  wording in full, and explains that nothing is *generated* — every hashtag is a
+  tag the author typed. FR-4.13 is added to §4 and FR-4.5's composition string now
+  shows the hashtag block. ADR-005 records the original conflict as it stood at
+  decision time rather than being rewritten, and carries an Update noting the
+  amendment.
 
 ## [0.1.0] - 2026-09-05
 
