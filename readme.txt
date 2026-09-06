@@ -4,7 +4,7 @@ Tags: x, social, auto-post, scheduling
 Requires at least: 6.5
 Tested up to: 6.9
 Requires PHP: 8.2
-Stable tag: 0.2.0
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -70,6 +70,10 @@ They are encrypted before being stored in the database, so a stolen database dum
 == Changelog ==
 
 See CHANGELOG.md in the repository for the full history.
+
+= 0.3.0 =
+* Added: "Post to X now" on the post edit screen, for a published post the plugin never sent — one older than the plugin, one it skipped, or one you cancelled.
+* Changed: "Repost now" and "Post to X now" both tick the post's "Post to X" box, so an unticked box can no longer cancel a send you just confirmed.
 
 = 0.2.0 =
 * Added: hashtags from the post's tags, off by default, maximum three per post.
