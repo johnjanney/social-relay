@@ -22,29 +22,7 @@ A change that breaks one of these is a defect regardless of what else it achieve
 5. **A failure is always recorded.** Nothing is swallowed into silence.
 6. **The featured image never blocks the post.** If the image fails, the text-and-URL post still goes out.
 
-## File map
-
-```
-social-relay/
-  social-relay.php          bootstrap, constants, autoloader, activation/deactivation
-  includes/
-    class-plugin.php        wires hooks
-    class-settings.php      options page, sanitization, encryption
-    class-scheduler.php     transition_post_status -> wp_schedule_single_event
-    class-publisher.php     the send pipeline
-    class-log.php           table install + write/read
-    class-post-meta.php     meta box + per-post fields
-    class-cron-health.php   last-run tracking + warning
-    class-usage.php         API request counter
-    providers/
-      interface-provider.php
-      class-x-provider.php  OAuth 1.0a signing, media upload, create post
-  admin/
-    settings-page.php       template
-    meta-box.php            template
-  uninstall.php
-  readme.txt
-```
+## Size target
 
 Target: under 15 PHP files, no build step.
 
