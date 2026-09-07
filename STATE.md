@@ -2,7 +2,7 @@
 
 Current state of the build. Updated in the same commit as the code it describes.
 
-**Last updated:** 2026-09-06 (first production post)
+**Last updated:** 2026-09-07 (production post details: image, hashtags, automatic trigger)
 
 ---
 
@@ -27,6 +27,8 @@ Current state of the build. Updated in the same commit as the code it describes.
 **First post reached X in production — 2026-09-06.** The owner upgraded to 0.3.1 and clicked "Post to X now" on a real post; it appeared on X. This is the fact every release note since 0.1.0 said was missing, and it closes **OQ-15**: the create-post path is `/2/tweets`, and the constant stands. It also withdraws the stake attached to **OQ-19** on 2026-09-05 — Project membership, whatever the console shows, did not block the write. Owner-reported, not pasted: the HTTP status, remote id and log row were not captured, and whether the featured image attached and whether hashtags were on are not yet known. `SPEC.md` §8.3 and §17 OPEN-5, and `OPENQUESTIONS.md`, are updated to say exactly that much and no more.
 
 **The buttons never worked in the block editor — 2026-09-06.** The owner clicked "Post to X now" on a real site, accepted the billing confirmation, and nothing happened. All three meta box buttons were submit buttons inside the meta box form; the block editor wraps that form in `onsubmit="return false;"` and serialises only its fields on save, never a button's name and value. So the buttons only ever worked in the classic editor, and every test drove the handler directly rather than through a browser, which is why 0.3.0 shipped with it. Each button is now a nonce-protected link to `admin-post.php`, handled by `SRL_Post_Meta::handle_admin_post()`, the same pattern the notice-dismiss link already used. `SPEC.md` carries **amendment 3**: the mechanism paragraph under FR-2, one row in §15.1, and TR-16's notes 1 and 2 rewritten, because their reasoning rested on a `save_post` ordering that no longer exists. T-253 is renamed to what it now proves. The lesson worth keeping: a meta box "works in both editors" for display only, and the spec had already recorded that for field ordering in §11.5 without extending it to buttons. Review on the fix PR caught a consequence: a link bypasses the editor's save, so the fix-a-typo-then-repost workflow in `INSTRUCTIONS.md` would post the stale title if the author had not pressed Update. Accepted: both paid confirmations now say unsaved edits are not included, and the instructions say to save first. Saving programmatically from a link was rejected because it needs editor-specific JavaScript for both editors.
+
+**Both triggers work end to end in production — 2026-09-07.** The owner reports two more posts from the production site, and this time with the details the 2026-09-06 entry said were missing. Publishing an article sent the featured image, title, hashtags and permalink to X automatically, through the ordinary `transition_post_status` → cron → publisher path; that path had only ever been exercised on wp-env, where it failed gracefully for want of credentials. Clicking "Post to X now" did the same. So hashtags built from the post's tags reach X (FR-4.13, the first live evidence for the amendment 1 feature), and the automatic trigger works with real cron. **The image is recorded as visible, not as attached.** Review on PR #15 pointed out what the timeline cannot show: the plugin posts the permalink whether or not the media upload succeeded (FR-4.4), and X renders a link-preview card from the page's `og:image` on its own, a fallback `PROJECTBRIEF.md` §1.3 names. Without the request, the log row or the post's `_srl_image_omitted` meta, an image on the timeline does not prove `media.media_ids` was sent. The media path through the publisher therefore stays measured only by the Phase 0 probe. Owner-reported, not pasted, as before: no HTTP status, remote id or log row was captured, and the delay setting in force is not stated. This does not touch the Release Gate, which asks for seven days on staging with zero plugin-caused failures, not two successes; it does mean every requirement in the brief's §1 purpose statement has now been observed working at least once.
 
 ---
 
@@ -79,7 +81,9 @@ Every release up to 0.3.1 carries the same caveat in its notes: `POST /2/tweets`
 | Release zip builds | **yes** | `bin/build.sh` — 26 files, no dev or spec files |
 | Activates on a real site | **yes** | wp-env dev site: table created, defaults written with the switch off, both cron events scheduled |
 | End-to-end on a real site | **yes** | published a post → `scheduled` + event created → ran `srl_send_post` → failed gracefully with reason `missing`, log row self-contained |
-| First post on X, in production | **yes, owner-reported 2026-09-06** | 0.3.1, "Post to X now" on a real post; the post appeared on X. Response and log row not captured; image attachment not yet reported. |
+| First post on X, in production | **yes, owner-reported 2026-09-06** | 0.3.1, "Post to X now" on a real post; the post appeared on X. Response and log row not captured. |
+| Hashtags and automatic trigger, in production | **yes, owner-reported 2026-09-07** | Publishing an article posted the title, hashtags and link automatically; "Post to X now" did the same. Response and log row not captured. |
+| Featured image attached, in production | **image visible, attachment unverified** | An image appeared on both posts. Whether it was uploaded media or X's `og:image` link card cannot be told from the timeline; the meta box status line or the log row settles it. |
 | Admin screens render | **yes** | settings page 4,467 bytes with all four panels; meta box renders with nonce and the correct FR-2.5 and FR-2.6 controls |
 | CI on GitHub | **green** | <https://github.com/johnjanney/social-relay/actions> — all six jobs |
 
@@ -136,7 +140,7 @@ bug, which asserted one level too shallow to see it.
 | OQ-18 | FR-1.6 threshold | Whether Hostinger's hPanel offers every-minute cron |
 | OQ-19 | `INSTALLATION.md` wording only, since 2026-09-06 | Whether the X console still shows Projects |
 | Phase 6 acceptance | upgrading the verification marks in `INSTALLATION.md`, OPEN-11 | A staging site with a sandbox X app. OPEN-5 is closed by the production post. |
-| First production post, details | closing the image and hashtag questions on that post | Did the featured image attach? Were hashtags on? What does the log row show? |
+| Production post, log row | a **[MEASURED]** record of the create-post response, and whether the image was attached | Hashtags were answered on 2026-09-07. Still uncaptured: the log row for one production post, which carries the HTTP status and remote id, and whether the meta box shows the image as omitted. One paste from the settings page log panel, or one look at the meta box. On X itself, attached media shows as a photo with the link as bare text, while a card shows the site's domain under the image. |
 | Phase 10 acceptance | Release Gate | 7 days on the owner's staging site with real cron |
 
 `INSTALLATION.md` and `INSTRUCTIONS.md` were written on 2026-09-05 at the owner's explicit request, ahead of the Phase 6 acceptance run that brief §12 says should produce them. The concern was raised twice and overruled, which is the owner's call to make.
